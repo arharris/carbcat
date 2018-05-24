@@ -1,1 +1,1 @@
-"Some boring text"
+"Some really boring text"
