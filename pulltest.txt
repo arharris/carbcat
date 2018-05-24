@@ -1,1 +1,1 @@
-"Some boring text, back on the master branch"
+"Some boring text"
