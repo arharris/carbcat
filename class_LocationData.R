@@ -13,10 +13,11 @@
 # ==========================================================================================
 setClass("location.data",
          slots=c(
-           land.ownership = "string",
+           land.ownership = "character",
            size.class.decay.rates = "data.frame",
            slope = "numeric",
-           biomass.market.volume = "string",
-           pulp.market = "logical"
+           biomass.market.volume = "character",
+           pulp.market = "logical",
+           primary.harvest.species = "character"
          )
         )
