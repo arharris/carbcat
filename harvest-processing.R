@@ -98,7 +98,9 @@ harvest.processing <- function(ag.or.forest,
   remove(processing.CI)
   
   # Now to tackle decay emissions. In spreadsheet form, we calculated the mass loss and looked up the appropriate values.
-  # This led to giant lookup tables. I think we can make this more efficienct by looking up specific decay formulas.
+  # This led to giant lookup tables. I think we can make this more efficient by looking up specific decay formulas.
   
+  
+  # Several options: match.fun, or get
   
 }
