@@ -7,14 +7,13 @@
 # VERSION:
 #
 #   2018-05-24: Initialized Script
+#   2018-05-30: Version 1 complete; takes specified input and location object,
+#               returns output object.
 #
 # -------------------------------------------------------------------------
 # ACTION ITEMS:
 # Index   Description                                                      Status
 # -----   --------------------------------------------------------------   ------
-#   1     Need to include location (or location-specific information) as    IN PROGRESS
-#         input
-#   2     Track mass loss and moisture content                              IN PROGRESS
 #         
 # ---------------------------------
 # INPUTS:
@@ -38,14 +37,15 @@
 # Source files
 source("misc-functions.R")
 source("class_LocationData.R")
+source("class_ModuleOutput.R")
 # Make a dummy location data
-dummy.location.obj <- new("location.data",
-         land.ownership = "Private",
-         slope = 0,
-         biomass.market.volume = "High Volume",
-         pulp.market = FALSE,
-         primary.harvest.species = "Mixed"
-)
+#dummy.location.obj <- new("location.data",
+#         land.ownership = "Private",
+#         slope = 0,
+#         biomass.market.volume = "High Volume",
+#         pulp.market = FALSE,
+#         primary.harvest.species = "Mixed"
+#)
 source("harvest-equipment-selection-function.R")
 source("decay-functions.R")
 source("moisture-loss-functions.R")
@@ -62,12 +62,13 @@ harvest.processing <- function(ag.or.forest,
                                location.obj) {
   
   # Debugging values
-  ag.or.forest <- 'Forestry'
-  treatment.type <- 'None'
-  initial.moisture <- 35
-  harvest.collection.year.diff <- 4
-  comminution.opt <- 'Chipping'
-  processing.opt <- 'Pelletizer'
+#  ag.or.forest <- 'Forestry'
+#  treatment.type <- 'None'
+#  initial.moisture <- 35
+#  harvest.collection.year.diff <- 4
+#  comminution.opt <- 'Chipping'
+#  processing.opt <- 'Pelletizer'
+
   # I am imagining that we would load in the relevant tables? We can then clear out the data 
   # after we've performed the calculations we need to perform.
   
@@ -145,6 +146,18 @@ harvest.processing <- function(ag.or.forest,
   
   # Processing, comminution, and decay emissions have been calculated, and comminution/
   # processing mass loss calculations are complete. Last, we calculate moisture loss
+  moisture.loss.function.key <- paste(ag.or.forest,dummy.location.obj@primary.harvest.species,'moisture.loss',sep='.')
+  moisture.loss.function <- match.fun(moisture.loss.function.key)
+  harvest.processing.moisture.loss <- moisture.loss.function(harvest.collection.year.diff)
   
+  harvest.processing.return.obj <- new("module.output",
+           emissions.timeline = emissions.annual.profile,
+          #################################################
+          # Reality check the mass loss calculation
+          ################################################
+           mass.loss = processing.mass.loss*comminution.mass.loss,
+           remaining.moisture = initial.moisture * harvest.processing.moisture.loss
+  )
   
+  return(harvest.processing.return.obj)
 }

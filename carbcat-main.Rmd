@@ -1,3 +1,8 @@
 # This script will contain the main code for CARBCAT, while calling on separate modules for
 # model segments.
-source(harvest-processing.Rmd)
+```{r}
+source("harvest-processing.R")
+
+
+
+```
