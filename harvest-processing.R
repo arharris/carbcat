@@ -29,7 +29,9 @@
 #
 # ---------------------------------
 # OUTPUTS:
-# A data table covering emissions for years 0-100 (Get more details here)
+# 1) A data table covering emissions for years 0-100 (Get more details here)
+# 2) Mass loss through processing/comminution
+# 3) Moisture loss through passive drying
 #
 # =============================================================================
 
@@ -46,6 +48,7 @@ dummy.location.obj <- new("location.data",
 )
 source("harvest-equipment-selection-function.R")
 source("decay-functions.R")
+source("moisture-loss-functions.R")
 
 # Required Libraries
 load.libraries(c('data.table','zoo'))
@@ -65,7 +68,6 @@ harvest.processing <- function(ag.or.forest,
   harvest.collection.year.diff <- 4
   comminution.opt <- 'Chipping'
   processing.opt <- 'Pelletizer'
-#  location.obj
   # I am imagining that we would load in the relevant tables? We can then clear out the data 
   # after we've performed the calculations we need to perform.
   
@@ -125,19 +127,24 @@ harvest.processing <- function(ag.or.forest,
   # Outputs of the decay function are the CO2eq emissions, not just the carbon lost.
   # (this is important if there are instances where decay leads to more than CO2).
   # SECOND DESIGN DECISION ANDY IS MAKING
-  # I do not know what the deay functions will look like, but I am assuming that they
+  # I do not know what the decay functions will look like, but I am assuming that they
   # will not result in decay = 0 at year 0; so we are not assessing decay emissions at year 0
   #################################################################################
   #################################################################################
+  emissions.annual.profile[Year==0,Cumulative.Decay_Tons.CO2eq.per.BDT.biomass:=0]
   emissions.annual.profile[Year>0&Year<harvest.collection.year.diff,Cumulative.Decay_Tons.CO2eq.per.BDT.biomass:=sapply(Year,decay.function)]
   emissions.annual.profile[,Cumulative.Decay_Tons.CO2eq.per.BDT.biomass:=na.locf(Cumulative.Decay_Tons.CO2eq.per.BDT.biomass,na.rm=FALSE)]
-  emissions.annual.profile[Year==0,Cumulative.Decay_Tons.CO2eq.per.BDT.biomass:=0]
 
   # Calculate the annual emissions difference from the cumulative emissions
-  emissions.annual.profile[Year>0,Annual.Decay_Tons.CO2eq.per.BDT.biomass:=Cumulative.Decay_Tons.CO2eq.per.BDT.biomass - c(0,Cumulative.Decay_Tons.CO2eq.per.BDT.biomass[(.I-1)])]
   emissions.annual.profile[Year==0,Annual.Decay_Tons.CO2eq.per.BDT.biomass:=0]
-  
+  emissions.annual.profile[Year>0,Annual.Decay_Tons.CO2eq.per.BDT.biomass:=Cumulative.Decay_Tons.CO2eq.per.BDT.biomass - c(0,Cumulative.Decay_Tons.CO2eq.per.BDT.biomass[(.I-1)])]
+
   # Add up the total annual emissions, then determine the cumulative
   emissions.annual.profile[,Annual.Total_Tons.CO2eq.per.BDT.biomass := Harvest_Tons.CO2eq.per.BDT.biomass + Comminution_Tons.CO2eq.per.BDT.biomass + Processing_Tons.CO2eq.per.BDT.biomass + Annual.Decay_Tons.CO2eq.per.BDT.biomass]
   emissions.annual.profile[,Cumulative.Total_Tons.CO2eq.per.BDT.biomass:=cumsum(Annual.Total_Tons.CO2eq.per.BDT.biomass)]
+  
+  # Processing, comminution, and decay emissions have been calculated, and comminution/
+  # processing mass loss calculations are complete. Last, we calculate moisture loss
+  
+  
 }
