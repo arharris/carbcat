@@ -18,8 +18,14 @@
 # ---------------------------------
 # INPUTS:
 # ag.or.forest: Value of "Agriculture" or "Forestry"
-# treatment.type: (explain better)
-
+# treatment.type:
+# initial.moisture: 
+# harvest.collection.year.diff: Years between residue generation and residue collection;
+#     default value is 0 (residues collected same year they are produced)
+# comminution.opt: Residue comminution method; default value "None"
+# processing.opt: Residue processing method; default value "None"
+# location.obj: A custom object containing all location-specific data, taken from GIS
+#
 # ---------------------------------
 # OBJECTIVE:
 #
