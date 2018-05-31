@@ -34,7 +34,7 @@
 #
 # ---------------------------------
 # OUTPUTS:
-# 1) A data table covering emissions for years 0-100 (Get more details here)
+# 1) A data table covering emissions for years 1-100 (Get more details here)
 # 2) Mass loss through processing/comminution
 # 3) Moisture loss through passive drying
 #
@@ -70,28 +70,29 @@ harvest.processing <- function(ag.or.forest,
   ########################################################################################
   # UPDATE NEEDED: Will not be CO2eq, will contain each class of GHG; CO2, CH4, and N2O,
   # FOR EACH SOURCE. Will eventually be converted in emissions aggregation module, but we will keep
-  # separated until then. Technically year should be 1-100.
-  # KEEP YEAR COLUMN FOR TRANSPARENCY
+  # separated until then. Year should be 1-100. KEEP YEAR COLUMN FOR TRANSPARENCY
   ########################################################################################
   
   emissions.annual.profile <- data.table(Year=1:100,
-                                         Harvest_Tons.CO2eq.per.BDT.biomass=0,
-                                         Comminution_Tons.CO2eq.per.BDT.biomass=0,
-                                         Processing_Tons.CO2eq.per.BDT.biomass=0)
+                                         Harvest_Tons.CO2.per.BDT.biomass=0,
+                                         Harvest_Tons.CH4.per.BDT.biomass=0,
+                                         Harvest_Tons.N2O.per.BDT.biomass=0,
+                                         Comminution_Tons.CO2.per.BDT.biomass=0,
+                                         Comminution_Tons.CH4.per.BDT.biomass=0,
+                                         Comminution_Tons.N2O.per.BDT.biomass=0,
+                                         Processing_Tons.CO2.per.BDT.biomass=0,
+                                         Processing_Tons.CH4.per.BDT.biomass=0,
+                                         Processing_Tons.N2O.per.BDT.biomass=0)
   
   # There are four emissions sources: harvest equipment, processing, comminution, and
   # any pre-harvest decay. Equipment, processing, and comminution will require
   # matching the correct emissions factor with the correct option, and applying to
   # the harvest year.
-  #################################################################################
-  #################################################################################
-  # DESIGN DECISION ANDY IS MAKING
-  # I want to store lookup table type information - harvest equipment, processing,
-  # and comminution carbon intensities, in a directory labeled "Lookup_Data" in the
-  # main directory. For speed and file size reasons, I want them as Rdata files. We
+ 
+  # Lookup table type information - harvest equipment, processing, and comminution 
+  # carbon intensities are stored in a directory labeled "Lookup_Data" in the main 
+  # directory. For speed and file size reasons, I want them as Rdata files. We
   # can then clear out the data after we've performed the calculations we need to perform.
-  #################################################################################
-  #################################################################################
   
   # Add harvest emissions to the harvest year
   emissions.annual.profile[Year==harvest.collection.year.diff,Harvest_Tons.CO2eq.per.BDT.biomass:=select.harvest.equipment(TRUE)]
@@ -117,7 +118,7 @@ harvest.processing <- function(ag.or.forest,
   # what we need based on the year.
   
   # Currently, the labels for the dummy functions are ag.or.forest and the primary harvest species. 
-  # I've also onl;u written three dummy functions.
+  # I've also only written three dummy functions.
   decay.function.key <- paste(ag.or.forest,dummy.location.obj@primary.harvest.species,'decay',sep='.')
   decay.function <- match.fun(decay.function.key)
   
