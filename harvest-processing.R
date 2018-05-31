@@ -67,9 +67,14 @@ harvest.processing <- function(ag.or.forest,
 #  comminution.opt <- 'Chipping'
 #  processing.opt <- 'Pelletizer'
   
-  # Let's get some basic construction out of the way. If there is a way to index row 
-  # number for use in decay formulas, that would be amazing.
-  emissions.annual.profile <- data.table(Year=0:100,
+  ########################################################################################
+  # UPDATE NEEDED: Will not be CO2eq, will contain each class of GHG; CO2, CH4, and N2O,
+  # FOR EACH SOURCE. Will eventually be converted in emissions aggregation module, but we will keep
+  # separated until then. Technically year should be 1-100.
+  # KEEP YEAR COLUMN FOR TRANSPARENCY
+  ########################################################################################
+  
+  emissions.annual.profile <- data.table(Year=1:100,
                                          Harvest_Tons.CO2eq.per.BDT.biomass=0,
                                          Comminution_Tons.CO2eq.per.BDT.biomass=0,
                                          Processing_Tons.CO2eq.per.BDT.biomass=0)
@@ -123,9 +128,11 @@ harvest.processing <- function(ag.or.forest,
   # DESIGN DECISION ANDY IS MAKING
   # Outputs of the decay function are the CO2eq emissions, not just the carbon lost.
   # (this is important if there are instances where decay leads to more than CO2).
+  # - THIS WILL ALSO NEED TO CHANGE - 
   # SECOND DESIGN DECISION ANDY IS MAKING
   # I do not know what the decay functions will look like, but I am assuming that they
   # will not result in decay = 0 at year 0; so we are not assessing decay emissions at year 0
+  # - THIS IS NOT THE CASE. SEE THE EXCEL SPREADSHEET - 
   #################################################################################
   #################################################################################
   emissions.annual.profile[Year==0,Cumulative.Decay_Tons.CO2eq.per.BDT.biomass:=0]
