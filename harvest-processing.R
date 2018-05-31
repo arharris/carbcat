@@ -44,14 +44,6 @@
 source("misc-functions.R")
 source("class_LocationData.R")
 source("class_ModuleOutput.R")
-# Make a dummy location data
-#dummy.location.obj <- new("location.data",
-#         land.ownership = "Private",
-#         slope = 0,
-#         biomass.market.volume = "High Volume",
-#         pulp.market = FALSE,
-#         primary.harvest.species = "Mixed"
-#)
 source("harvest-equipment-selection-function.R")
 source("decay-functions.R")
 source("moisture-loss-functions.R")
@@ -74,9 +66,6 @@ harvest.processing <- function(ag.or.forest,
 #  harvest.collection.year.diff <- 4
 #  comminution.opt <- 'Chipping'
 #  processing.opt <- 'Pelletizer'
-
-  # I am imagining that we would load in the relevant tables? We can then clear out the data 
-  # after we've performed the calculations we need to perform.
   
   # Let's get some basic construction out of the way. If there is a way to index row 
   # number for use in decay formulas, that would be amazing.
@@ -94,7 +83,8 @@ harvest.processing <- function(ag.or.forest,
   # DESIGN DECISION ANDY IS MAKING
   # I want to store lookup table type information - harvest equipment, processing,
   # and comminution carbon intensities, in a directory labeled "Lookup_Data" in the
-  # main directory. For speed and file size reasons, I want them as Rdata files.
+  # main directory. For speed and file size reasons, I want them as Rdata files. We
+  # can then clear out the data after we've performed the calculations we need to perform.
   #################################################################################
   #################################################################################
   
@@ -161,7 +151,7 @@ harvest.processing <- function(ag.or.forest,
           #################################################
           # Reality check the mass loss calculation
           ################################################
-           mass.loss = processing.mass.loss*comminution.mass.loss,
+           mass.loss = processing.mass.loss+comminution.mass.loss,
            remaining.moisture = initial.moisture * harvest.processing.moisture.loss
   )
   
