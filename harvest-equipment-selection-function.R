@@ -16,9 +16,11 @@ select.harvest.equipment <- function(is.random){ # Is random is a boolean if we 
   load('Lookup_Data/harvest-equipment-CI.Rdata')
   
   # Select a random value, unless is.random is FALSE, in which case, select the dump truck value.
-  return.value <- ifelse(is.random,
-                         sample(harvest.equipment.CI[,Tons.CO2eq.per.BDT.biomass],1),
-                         harvest.equipment.CI[Equipment=='Dump Truck',Tons.CO2eq.per.BDT.biomass])
+  if(is.random){
+    return.value <- harvest.equipment.CI[sample(1:nrow(harvest.equipment.CI),1),c(Tons.CO2.per.BDT.biomass,Tons.CH4.per.BDT.biomass,Tons.N2O.per.BDT.biomass)]
+  } else {
+    return.value <- harvest.equipment.CI[Equipment=='Dump Truck',c(Tons.CO2.per.BDT.biomass,Tons.CH4.per.BDT.biomass,Tons.N2O.per.BDT.biomass)]
+  }
   
   # Eliminate the CI table for now
   remove(harvest.equipment.CI)

@@ -60,19 +60,14 @@ harvest.processing <- function(ag.or.forest,
                                location.obj) {
   
   # Debugging values
-#  ag.or.forest <- 'Forestry'
-#  treatment.type <- 'None'
-#  initial.moisture <- 35
-#  harvest.collection.year.diff <- 4
-#  comminution.opt <- 'Chipping'
-#  processing.opt <- 'Pelletizer'
+  #ag.or.forest <- 'Forestry'
+  #treatment.type <- 'None'
+  #initial.moisture <- 35
+  #harvest.collection.year.diff <- 4
+  #comminution.opt <- 'Chipping'
+  #processing.opt <- 'Pelletizer'
   
-  ########################################################################################
-  # UPDATE NEEDED: Will not be CO2eq, will contain each class of GHG; CO2, CH4, and N2O,
-  # FOR EACH SOURCE. Will eventually be converted in emissions aggregation module, but we will keep
-  # separated until then. Year should be 1-100. KEEP YEAR COLUMN FOR TRANSPARENCY
-  ########################################################################################
-  
+  # Year should be 1-100. KEEP YEAR COLUMN FOR TRANSPARENCY
   emissions.annual.profile <- data.table(Year=1:100,
                                          Harvest_Tons.CO2.per.BDT.biomass=0,
                                          Harvest_Tons.CH4.per.BDT.biomass=0,
@@ -94,19 +89,29 @@ harvest.processing <- function(ag.or.forest,
   # directory. For speed and file size reasons, I want them as Rdata files. We
   # can then clear out the data after we've performed the calculations we need to perform.
   
-  # Add harvest emissions to the harvest year
-  emissions.annual.profile[Year==harvest.collection.year.diff,Harvest_Tons.CO2eq.per.BDT.biomass:=select.harvest.equipment(TRUE)]
+  # select.harvest.equipment will match our criteria to the appropriate equipment. 
+  # The function will return a 3-value vector; [CO2 intensity, CH4 intensity, N2O intensity]
+  selected.equipment <- select.harvest.equipment(TRUE)
+  
+  # Add harvest emissions to the harvest year. 
+  emissions.annual.profile[Year==harvest.collection.year.diff,':='(Harvest_Tons.CO2.per.BDT.biomass=selected.equipment[1],
+                                                                   Harvest_Tons.CH4.per.BDT.biomass=selected.equipment[2],
+                                                                   Harvest_Tons.N2O.per.BDT.biomass=selected.equipment[3])]
   
   # Load up the comminution data, add the appropriate emissions to the profile, and then
-  # remove the data.
+  # remove the data. 
   load("Lookup_Data/comminution-CI.Rdata")
-  emissions.annual.profile[Year==harvest.collection.year.diff,Comminution_Tons.CO2eq.per.BDT.biomass:=comminution.CI[Comminution==comminution.opt,Tons.CO2eq.per.BDT.biomass]]
+  emissions.annual.profile[Year==harvest.collection.year.diff,':='(Comminution_Tons.CO2.per.BDT.biomass=comminution.CI[Comminution==comminution.opt,Tons.CO2.per.BDT.biomass],
+                                                                   Comminution_Tons.CH4.per.BDT.biomass=comminution.CI[Comminution==comminution.opt,Tons.CH4.per.BDT.biomass],
+                                                                   Comminution_Tons.N2O.per.BDT.biomass=comminution.CI[Comminution==comminution.opt,Tons.N2O.per.BDT.biomass])]
   comminution.mass.loss <- comminution.CI[Comminution==comminution.opt,Post_Comminution.Mass.Loss]
   remove(comminution.CI)
   
   # Repeat for processing
   load("Lookup_Data/processing-CI.Rdata")
-  emissions.annual.profile[Year==harvest.collection.year.diff,Processing_Tons.CO2eq.per.BDT.biomass:=processing.CI[Processing==processing.opt,Tons.CO2eq.per.BDT.biomass]]
+  emissions.annual.profile[Year==harvest.collection.year.diff,':='(Processing_Tons.CO2.per.BDT.biomass=processing.CI[Processing==processing.opt,Tons.CO2.per.BDT.biomass],
+                                                                   Processing_Tons.CH4.per.BDT.biomass=processing.CI[Processing==processing.opt,Tons.CH4.per.BDT.biomass],
+                                                                   Processing_Tons.N2O.per.BDT.biomass=processing.CI[Processing==processing.opt,Tons.N2O.per.BDT.biomass])]
   processing.mass.loss <- processing.CI[Processing==processing.opt,Post_Processing.Mass.Loss]
   remove(processing.CI)
   
@@ -123,30 +128,31 @@ harvest.processing <- function(ag.or.forest,
   decay.function <- match.fun(decay.function.key)
   
   # Now that we have the appropriate decay function, create a column in emissions.annual.profile
-  # for the cumulative decay at year X.
-  #################################################################################
-  #################################################################################
-  # DESIGN DECISION ANDY IS MAKING
-  # Outputs of the decay function are the CO2eq emissions, not just the carbon lost.
-  # (this is important if there are instances where decay leads to more than CO2).
-  # - THIS WILL ALSO NEED TO CHANGE - 
-  # SECOND DESIGN DECISION ANDY IS MAKING
-  # I do not know what the decay functions will look like, but I am assuming that they
-  # will not result in decay = 0 at year 0; so we are not assessing decay emissions at year 0
-  # - THIS IS NOT THE CASE. SEE THE EXCEL SPREADSHEET - 
-  #################################################################################
-  #################################################################################
-  emissions.annual.profile[Year==0,Cumulative.Decay_Tons.CO2eq.per.BDT.biomass:=0]
-  emissions.annual.profile[Year>0&Year<harvest.collection.year.diff,Cumulative.Decay_Tons.CO2eq.per.BDT.biomass:=sapply(Year,decay.function)]
-  emissions.annual.profile[,Cumulative.Decay_Tons.CO2eq.per.BDT.biomass:=na.locf(Cumulative.Decay_Tons.CO2eq.per.BDT.biomass,na.rm=FALSE)]
+  # for the cumulative decay at year X. In addition to the standard input data needed to calculate
+  # decay, the decay function also requires the specific emissions species (CO2, CH4, N2O). The 
+  # output will be the tons emissions/BDT biomass
+  
+  emissions.annual.profile[Year<=harvest.collection.year.diff,':='(Cumulative.Decay_Tons.CO2.per.BDT.biomass=mapply(decay.function,"CO2",Year),
+                                                                   Cumulative.Decay_Tons.CH4.per.BDT.biomass=mapply(decay.function,"CH4",Year),
+                                                                   Cumulative.Decay_Tons.N2O.per.BDT.biomass=mapply(decay.function,"N2O",Year))]
+  
+  emissions.annual.profile[,':='(Cumulative.Decay_Tons.CO2.per.BDT.biomass=na.locf(Cumulative.Decay_Tons.CO2.per.BDT.biomass,na.rm=FALSE),
+                                 Cumulative.Decay_Tons.CH4.per.BDT.biomass=na.locf(Cumulative.Decay_Tons.CH4.per.BDT.biomass,na.rm=FALSE),
+                                 Cumulative.Decay_Tons.N2O.per.BDT.biomass=na.locf(Cumulative.Decay_Tons.N2O.per.BDT.biomass,na.rm=FALSE))]
 
   # Calculate the annual emissions difference from the cumulative emissions
-  emissions.annual.profile[Year==0,Annual.Decay_Tons.CO2eq.per.BDT.biomass:=0]
-  emissions.annual.profile[Year>0,Annual.Decay_Tons.CO2eq.per.BDT.biomass:=Cumulative.Decay_Tons.CO2eq.per.BDT.biomass - c(0,Cumulative.Decay_Tons.CO2eq.per.BDT.biomass[(.I-1)])]
+  emissions.annual.profile[,':='(Annual.Decay_Tons.CO2.per.BDT.biomass=Cumulative.Decay_Tons.CO2.per.BDT.biomass - c(0,Cumulative.Decay_Tons.CO2.per.BDT.biomass[(.I-1)]),
+                                 Annual.Decay_Tons.CH4.per.BDT.biomass=Cumulative.Decay_Tons.CH4.per.BDT.biomass - c(0,Cumulative.Decay_Tons.CH4.per.BDT.biomass[(.I-1)]),
+                                 Annual.Decay_Tons.N2O.per.BDT.biomass=Cumulative.Decay_Tons.N2O.per.BDT.biomass - c(0,Cumulative.Decay_Tons.N2O.per.BDT.biomass[(.I-1)]))]
 
   # Add up the total annual emissions, then determine the cumulative
-  emissions.annual.profile[,Annual.Total_Tons.CO2eq.per.BDT.biomass := Harvest_Tons.CO2eq.per.BDT.biomass + Comminution_Tons.CO2eq.per.BDT.biomass + Processing_Tons.CO2eq.per.BDT.biomass + Annual.Decay_Tons.CO2eq.per.BDT.biomass]
-  emissions.annual.profile[,Cumulative.Total_Tons.CO2eq.per.BDT.biomass:=cumsum(Annual.Total_Tons.CO2eq.per.BDT.biomass)]
+  emissions.annual.profile[,':='(Annual.Total_Tons.CO2.per.BDT.biomass = Harvest_Tons.CO2.per.BDT.biomass + Comminution_Tons.CO2.per.BDT.biomass + Processing_Tons.CO2.per.BDT.biomass + Annual.Decay_Tons.CO2.per.BDT.biomass,
+                                 Annual.Total_Tons.CH4.per.BDT.biomass = Harvest_Tons.CH4.per.BDT.biomass + Comminution_Tons.CH4.per.BDT.biomass + Processing_Tons.CH4.per.BDT.biomass + Annual.Decay_Tons.CH4.per.BDT.biomass,
+                                 Annual.Total_Tons.N2O.per.BDT.biomass = Harvest_Tons.N2O.per.BDT.biomass + Comminution_Tons.N2O.per.BDT.biomass + Processing_Tons.N2O.per.BDT.biomass + Annual.Decay_Tons.N2O.per.BDT.biomass)]
+  
+  emissions.annual.profile[,':='(Cumulative.Total_Tons.CO2.per.BDT.biomass = cumsum(Annual.Total_Tons.CO2.per.BDT.biomass),
+                                 Cumulative.Total_Tons.CH4.per.BDT.biomass = cumsum(Annual.Total_Tons.CH4.per.BDT.biomass),
+                                 Cumulative.Total_Tons.N2O.per.BDT.biomass = cumsum(Annual.Total_Tons.N2O.per.BDT.biomass))]
   
   # Processing, comminution, and decay emissions have been calculated, and comminution/
   # processing mass loss calculations are complete. Last, we calculate moisture loss
@@ -156,9 +162,6 @@ harvest.processing <- function(ag.or.forest,
   
   harvest.processing.return.obj <- new("module.output",
            emissions.timeline = emissions.annual.profile,
-          #################################################
-          # Reality check the mass loss calculation
-          ################################################
            mass.loss = processing.mass.loss+comminution.mass.loss,
            remaining.moisture = initial.moisture * harvest.processing.moisture.loss
   )
