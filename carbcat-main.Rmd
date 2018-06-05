@@ -22,7 +22,20 @@ will be stored in a location.data object. Currently, a location.data object cont
 5) pulp.market = "logical"
 6) primary.harvest.species = "character"
 
-For now, load up a location.data object with dummy data
+For now, load up a location.data object with dummy data. If you want to make a fresh location 
+object, use this code: (forestry decay currently set for Excel location FarNorCal)
+dummy.location.obj <- new("location.data",
+                          land.ownership = "Private",
+                          forestry.decay.rates = data.frame(scattered.CO2.k=-0.08,
+                                                            scattered.CH4.k=-0.06,
+                                                            scattered.N2O.k=-0.09,
+                                                            piled.CO2.k=-0.04,
+                                                            piled.CH4.k=-0.054,
+                                                            piled.N2O.k=-0.081),
+                          slope = 0,
+                          biomass.market.volume = "High Volume",
+                          pulp.market = FALSE,
+                          primary.harvest.species = "Corn")
 ```{r}
 load("dummy-location-obj.Rdata")
 

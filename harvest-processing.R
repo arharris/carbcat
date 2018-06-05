@@ -25,6 +25,10 @@
 # comminution.opt: Residue comminution method; default value "None"
 # processing.opt: Residue processing method; default value "None"
 # location.obj: A custom object containing all location-specific data, taken from GIS
+# scattered.fraction: The decimal fraction of the matterial TO BE HARVESTED that is 
+#     scattered
+# piled.fraction: The decimal fraction of the matterial TO BE HARVESTED that is 
+#     piled
 #
 # ---------------------------------
 # OBJECTIVE:
@@ -57,15 +61,20 @@ harvest.processing <- function(ag.or.forest,
                                harvest.collection.year.diff,
                                comminution.opt,
                                processing.opt,
+                               scattered.fraction,
+                               piled.fraction,
                                location.obj) {
   
   # Debugging values
-  #ag.or.forest <- 'Forestry'
-  #treatment.type <- 'None'
-  #initial.moisture <- 35
-  #harvest.collection.year.diff <- 4
-  #comminution.opt <- 'Chipping'
-  #processing.opt <- 'Pelletizer'
+  ag.or.forest <- 'Agriculture'
+  treatment.type <- 'None'
+  initial.moisture <- 35
+  harvest.collection.year.diff <- 4
+  comminution.opt <- 'Grinding'
+  processing.opt <- 'None'
+  location.obj <- dummy.location.obj
+  scattered.fraction <- 0.5
+  piled.fraction <- 0.5
   
   # Year should be 1-100. KEEP YEAR COLUMN FOR TRANSPARENCY
   emissions.annual.profile <- data.table(Year=1:100,
@@ -132,9 +141,9 @@ harvest.processing <- function(ag.or.forest,
   # decay, the decay function also requires the specific emissions species (CO2, CH4, N2O). The 
   # output will be the tons emissions/BDT biomass
   
-  emissions.annual.profile[Year<=harvest.collection.year.diff,':='(Cumulative.Decay_Tons.CO2.per.BDT.biomass=mapply(decay.function,"CO2",Year),
-                                                                   Cumulative.Decay_Tons.CH4.per.BDT.biomass=mapply(decay.function,"CH4",Year),
-                                                                   Cumulative.Decay_Tons.N2O.per.BDT.biomass=mapply(decay.function,"N2O",Year))]
+  emissions.annual.profile[Year<=harvest.collection.year.diff,':='(Cumulative.Decay_Tons.CO2.per.BDT.biomass=mapply(decay.function,"CO2",Year,location.obj,scattered.fraction,piled.fraction),
+                                                                   Cumulative.Decay_Tons.CH4.per.BDT.biomass=mapply(decay.function,"CH4",Year,location.obj,scattered.fraction,piled.fraction),
+                                                                   Cumulative.Decay_Tons.N2O.per.BDT.biomass=mapply(decay.function,"N2O",Year,location.obj,scattered.fraction,piled.fraction))]
   
   emissions.annual.profile[,':='(Cumulative.Decay_Tons.CO2.per.BDT.biomass=na.locf(Cumulative.Decay_Tons.CO2.per.BDT.biomass,na.rm=FALSE),
                                  Cumulative.Decay_Tons.CH4.per.BDT.biomass=na.locf(Cumulative.Decay_Tons.CH4.per.BDT.biomass,na.rm=FALSE),
