@@ -45,8 +45,8 @@ ui <- fluidPage(
     ),
     mainPanel(
       leafletOutput("mymap"),
-      p(),
-      actionButton("recalc", "New points")
+      plotOutput("sampleEmissions"),
+      p()
     )
   )
 )
@@ -64,11 +64,19 @@ server <- function(input, output, session) {
                         Long=-124,
                         Radius = 1000,
                         Message=msg1)
+  plot.data <- data.frame(x=1:100)
+  plot.data$y <- 3*exp(1/(plot.data$x))
   
   output$mymap <- renderLeaflet({
     leaflet() %>%
       addTiles() %>%
       addCircles(data = circles,lat = ~ Lat,lng = ~ Long, radius = ~ Radius, popup = ~ Message)
+  })
+  output$sampleEmissions <- renderPlot({
+    ggplot(plot.data) +
+      geom_point(aes(x=x,y=y)) +
+      ylab("Annual Emissions (Tons CO2)") +
+      xlab("Year")
   })
 }
 
