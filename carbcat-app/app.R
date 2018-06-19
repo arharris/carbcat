@@ -28,7 +28,7 @@ ui <- fluidPage(
   sidebarLayout(
     sidebarPanel(
       h3("Instructions"),
-      helpText("All existence is suffering, only sheep attempt to anesthetize themselves"),
+      helpText("Select your input for CARBCAT below:"),
       radioButtons(inputId = "ag.or.forest",
                    label = "Residue Sector",
                    choices = list("Forestry","Agriculture")),
@@ -39,6 +39,27 @@ ui <- fluidPage(
                                  "Thin from above: 20% basal area",
                                  "Thin from above: 40% basal area",
                                  "You shouldn't actually see this option")),
+      selectInput(inputId = "post.harvest.processing",
+                  label = "Post Harvest Processing",
+                  choices = list("Briquette",
+                                 "Torrefaction",
+                                 "Pelletization",
+                                 "None")),
+      selectInput(inputId = "possible.plants",
+                  label = "Biomass Plant",
+                  choices = list("DG Fairhaven Power, LLC",
+                                 "Eel River Power",
+                                 "Sierra Pacific Industries Anderson")),
+      sliderInput(inputId = "piled.biomass",
+                  label = "Percent of Biomass Piled",
+                  min = 0,
+                  max = 100,
+                  value = 50),
+      sliderInput(inputId = "burned.biomass",
+                  label = "Percent of Biomass Burned",
+                  min = 0,
+                  max = 100,
+                  value = 10),
       checkboxGroupInput(inputId = "ghg.species",
                          label = "Emissions to Track",
                          choices = list("CO2","CH4","N2O"))
@@ -60,17 +81,22 @@ server <- function(input, output, session) {
                 "<b>Existing Pulp Market:</b> Sort of, but that's Hank's deal and he's kind of weird."
   )
   
-  circles <- data.frame(Lat=40,
-                        Long=-124,
-                        Radius = 1000,
+  squares <- data.frame(Lat1=40,
+                        Lat2=40.015,
+                        Long1=-124,
+                        Long2=-123.985,
+                        Fill= "blue",
                         Message=msg1)
   plot.data <- data.frame(x=1:100)
   plot.data$y <- 3*exp(1/(plot.data$x))
+  r <- raster("/Users/harrisa/Desktop/CBI project Research/forShiny2.tif")
+#  crs(r) <- sp::CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
   
   output$mymap <- renderLeaflet({
-    leaflet() %>%
+    leaflet(options = clickOpts(id='test')) %>%
       addTiles() %>%
-      addCircles(data = circles,lat = ~ Lat,lng = ~ Long, radius = ~ Radius, popup = ~ Message)
+      addRasterImage(r) %>%
+      addRectangles(data = squares,lng1 = ~ Long1, lat1 = ~ Lat1, lng2 = ~ Long2, lat2 = ~ Lat2, fill = ~ Fill, popup = ~ Message)
   })
   output$sampleEmissions <- renderPlot({
     ggplot(plot.data) +
