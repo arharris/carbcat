@@ -16,7 +16,7 @@ We don't yet know how we are going to interface GIS data with R, but we do know 
 will be stored in a location.data object. Currently, a location.data object contains the following slots:
 
 1) land.ownership = "character"
-2) size.class.decay.rates = "data.frame"
+2) forestry.decay.rates = "data.frame"
 3) slope = "numeric"
 4) biomass.market.volume = "character"
 5) pulp.market = "logical"
@@ -41,12 +41,18 @@ load("dummy-location-obj.Rdata")
 
 ```
 
-We also need to load the other user-input data not expressly tied to location (things like "ag.o.forestry", or
+We also need to load the other user-input data not expressly tied to location (things like "ag.or.forestry", or
 the agricultural residue under consideration)
 
 Again, I don't know how this will look in the final product, but for now, just define some dummy values.
 ```{r}
-
-
+ag.or.forest <- 'Agriculture'
+treatment.type <- 'None'
+initial.moisture <- 35
+harvest.collection.year.diff <- 4
+comminution.opt <- 'Grinding'
+processing.opt <- 'None'
+scattered.fraction <- 0.5
+piled.fraction <- 0.5
 
 ```

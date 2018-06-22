@@ -14,7 +14,7 @@
 # ACTION ITEMS:
 # Index   Description                                                      Status
 # -----   --------------------------------------------------------------   ------
-#         
+# [1]     Develop decay functions for remainder of forestry/ag options     On-hold        
 # ---------------------------------
 # INPUTS:
 # ag.or.forest: Value of "Agriculture" or "Forestry"
@@ -66,15 +66,15 @@ harvest.processing <- function(ag.or.forest,
                                location.obj) {
   
   # Debugging values
-  ag.or.forest <- 'Agriculture'
-  treatment.type <- 'None'
-  initial.moisture <- 35
-  harvest.collection.year.diff <- 4
-  comminution.opt <- 'Grinding'
-  processing.opt <- 'None'
-  location.obj <- dummy.location.obj
-  scattered.fraction <- 0.5
-  piled.fraction <- 0.5
+#  ag.or.forest <- 'Agriculture'
+#  treatment.type <- 'None'
+#  initial.moisture <- 35
+#  harvest.collection.year.diff <- 4
+#  comminution.opt <- 'Grinding'
+#  processing.opt <- 'None'
+#  location.obj <- dummy.location.obj
+#  scattered.fraction <- 0.5
+#  piled.fraction <- 0.5
   
   # Year should be 1-100. KEEP YEAR COLUMN FOR TRANSPARENCY
   emissions.annual.profile <- data.table(Year=1:100,
