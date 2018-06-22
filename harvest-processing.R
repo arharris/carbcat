@@ -62,8 +62,7 @@ harvest.processing <- function(ag.or.forest,
                                comminution.opt,
                                processing.opt,
                                scattered.fraction,
-                               piled.fraction,
-                               location.obj) {
+                               piled.fraction) {
   
   # Debugging values
 #  ag.or.forest <- 'Agriculture'
@@ -72,7 +71,6 @@ harvest.processing <- function(ag.or.forest,
 #  harvest.collection.year.diff <- 4
 #  comminution.opt <- 'Grinding'
 #  processing.opt <- 'None'
-#  location.obj <- dummy.location.obj
 #  scattered.fraction <- 0.5
 #  piled.fraction <- 0.5
   
@@ -133,7 +131,7 @@ harvest.processing <- function(ag.or.forest,
   
   # Currently, the labels for the dummy functions are ag.or.forest and the primary harvest species. 
   # I've also only written three dummy functions.
-  decay.function.key <- paste(ag.or.forest,dummy.location.obj@primary.harvest.species,'decay',sep='.')
+  decay.function.key <- paste(ag.or.forest,this.location@primary.harvest.species,'decay',sep='.')
   decay.function <- match.fun(decay.function.key)
   
   # Now that we have the appropriate decay function, create a column in emissions.annual.profile
@@ -141,9 +139,9 @@ harvest.processing <- function(ag.or.forest,
   # decay, the decay function also requires the specific emissions species (CO2, CH4, N2O). The 
   # output will be the tons emissions/BDT biomass
   
-  emissions.annual.profile[Year<=harvest.collection.year.diff,':='(Cumulative.Decay_Tons.CO2.per.BDT.biomass=mapply(decay.function,"CO2",Year,location.obj,scattered.fraction,piled.fraction),
-                                                                   Cumulative.Decay_Tons.CH4.per.BDT.biomass=mapply(decay.function,"CH4",Year,location.obj,scattered.fraction,piled.fraction),
-                                                                   Cumulative.Decay_Tons.N2O.per.BDT.biomass=mapply(decay.function,"N2O",Year,location.obj,scattered.fraction,piled.fraction))]
+  emissions.annual.profile[Year<=harvest.collection.year.diff,':='(Cumulative.Decay_Tons.CO2.per.BDT.biomass=mapply(decay.function,"CO2",Year,scattered.fraction,piled.fraction),
+                                                                   Cumulative.Decay_Tons.CH4.per.BDT.biomass=mapply(decay.function,"CH4",Year,scattered.fraction,piled.fraction),
+                                                                   Cumulative.Decay_Tons.N2O.per.BDT.biomass=mapply(decay.function,"N2O",Year,scattered.fraction,piled.fraction))]
   
   emissions.annual.profile[,':='(Cumulative.Decay_Tons.CO2.per.BDT.biomass=na.locf(Cumulative.Decay_Tons.CO2.per.BDT.biomass,na.rm=FALSE),
                                  Cumulative.Decay_Tons.CH4.per.BDT.biomass=na.locf(Cumulative.Decay_Tons.CH4.per.BDT.biomass,na.rm=FALSE),
@@ -165,7 +163,7 @@ harvest.processing <- function(ag.or.forest,
   
   # Processing, comminution, and decay emissions have been calculated, and comminution/
   # processing mass loss calculations are complete. Last, we calculate moisture loss
-  moisture.loss.function.key <- paste(ag.or.forest,dummy.location.obj@primary.harvest.species,'moisture.loss',sep='.')
+  moisture.loss.function.key <- paste(ag.or.forest,this.location@primary.harvest.species,'moisture.loss',sep='.')
   moisture.loss.function <- match.fun(moisture.loss.function.key)
   harvest.processing.moisture.loss <- moisture.loss.function(harvest.collection.year.diff)
   
