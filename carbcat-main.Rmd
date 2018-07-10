@@ -22,7 +22,8 @@ will be stored in a location.data object. Currently, a location.data object cont
 5) pulp.market = "logical"
 6) primary.harvest.species = "character"
 
-Throughout this script, the variable for the location object will be named "this.location"
+Throughout this script, the variable for the location object will be named "this.location." It will be a global
+variable, used throughout functions and modules.
 
 For now, load up a location.data object with dummy data. If you want to make a fresh location 
 object, use this code: (forestry decay currently set for Excel location FarNorCal)
@@ -51,23 +52,54 @@ this.location <- new("location.data",
                           slope = 0,
                           biomass.market.volume = "High Volume",
                           pulp.market = FALSE,
-                          primary.harvest.species = "Mixed")
+                          primary.harvest.species = "Corn")
+
+########################################################################################
+########################################################################################
+########################################################################################
+# If we want to keep the primary harvest species for forestry, then in the shiny 
+# interface, have the "primary harvest species" be a drop-down that can overwrite if 
+# "Agriculture" is selected. If the primary forestry harvest species is going to be 
+# represented in k values only, remove it from the location object and put it as a shiny
+# menu for the agriculture case.
+########################################################################################
+########################################################################################
+########################################################################################
 
 ```
-
 We also need to load the other user-input data not expressly tied to location (things like "ag.or.forestry", or
-the agricultural residue under consideration)
+the agricultural residue under consideration). I imagine that this will be input from the Shiny user interface.
 
-Again, I don't know how this will look in the final product, but for now, just define some dummy values.
+For now, just define some dummy values. If "burn.year" isn't applicable, set it arbitrarily high here.
 ```{r}
-ag.or.forest <- 'Forestry'
+# Forestry option
+# ag.or.forest <- 'Forestry'
+# treatment.type <- 'None'
+# initial.moisture <- 35
+# harvest.collection.year.diff <- 4
+# comminution.opt <- 'Grinding'
+# post.harvest.processing <- 'None'
+# scattered.fraction <- 0.5
+# piled.fraction <- 0.5
+# burn.or.decay <- "Pile Burn" # "Decay Only", "Pile Burn", "In-Field Burn"
+# burn.year <- 1 # Year in which residues are burned - if no residue is being burned, this will be set arbitrarily large in-module.
+# land.management <- "None" #"None", "Scattering", "Re-incorporation"
+
+# Ag option
+ag.or.forest <- 'Agriculture'
 treatment.type <- 'None'
 initial.moisture <- 35
 harvest.collection.year.diff <- 4
 comminution.opt <- 'Grinding'
-processing.opt <- 'None'
+post.harvest.processing <- 'None'
 scattered.fraction <- 0.5
 piled.fraction <- 0.5
+burn.or.decay <- "Pile Burn" # "Decay Only", "Pile Burn", "In-Field Burn"
+burn.year <- 15 # Year in which residues are burned - if no residue is being burned, this will be set arbitrarily large in-module.
+land.management <- "None" #"None", "Scattering", "Re-incorporation"
+
+# If there is no burning, then set the burn year absurdly high.
+if(burn.or.decay=="Decay Only") { burn.year <- 802701 }
 
 ```
 
@@ -75,13 +107,25 @@ piled.fraction <- 0.5
 
 Harvest-Processing
 ```{r}
-ha
+harvest.processing.output <- harvest.processing(ag.or.forest, treatment.type, initial.moisture, harvest.collection.year.diff, comminution.opt, post.harvest.processing, scattered.fraction, piled.fraction)
+```
+
+In-Field Emissions; will almost certainly be different whether it is ag or forestry.
+```{r}
+if(ag.or.forest=='Agriculture') {
+  print("In-field ag module here")
+} else if (ag.or.forest=='Forestry') {
+  print("In-field forestry module here")
+} else {
+  cat("ag.or.forest give neither ag, nor forestry")
+}
+
+
+
 
 
 
 ```
-
-
 
 
 

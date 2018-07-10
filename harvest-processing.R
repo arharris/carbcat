@@ -23,8 +23,7 @@
 # harvest.collection.year.diff: Years between residue generation and residue collection;
 #     default value is 0 (residues collected same year they are produced)
 # comminution.opt: Residue comminution method; default value "None"
-# processing.opt: Residue processing method; default value "None"
-# location.obj: A custom object containing all location-specific data, taken from GIS
+# post.harvest.processing: Residue processing method; default value "None"
 # scattered.fraction: The decimal fraction of the matterial TO BE HARVESTED that is 
 #     scattered
 # piled.fraction: The decimal fraction of the matterial TO BE HARVESTED that is 
@@ -60,17 +59,21 @@ harvest.processing <- function(ag.or.forest,
                                initial.moisture,
                                harvest.collection.year.diff,
                                comminution.opt,
-                               processing.opt,
+                               post.harvest.processing,
                                scattered.fraction,
                                piled.fraction) {
-  
+
+  ################################################
+  ################################################
   # Debugging values
+  ################################################
+  ################################################
 #  ag.or.forest <- 'Agriculture'
 #  treatment.type <- 'None'
 #  initial.moisture <- 35
 #  harvest.collection.year.diff <- 4
 #  comminution.opt <- 'Grinding'
-#  processing.opt <- 'None'
+#  post.harvest.processing <- 'None'
 #  scattered.fraction <- 0.5
 #  piled.fraction <- 0.5
   
@@ -116,10 +119,10 @@ harvest.processing <- function(ag.or.forest,
   
   # Repeat for processing
   load("Lookup_Data/processing-CI.Rdata")
-  emissions.annual.profile[Year==harvest.collection.year.diff,':='(Processing_Tons.CO2.per.BDT.biomass=processing.CI[Processing==processing.opt,Tons.CO2.per.BDT.biomass],
-                                                                   Processing_Tons.CH4.per.BDT.biomass=processing.CI[Processing==processing.opt,Tons.CH4.per.BDT.biomass],
-                                                                   Processing_Tons.N2O.per.BDT.biomass=processing.CI[Processing==processing.opt,Tons.N2O.per.BDT.biomass])]
-  processing.mass.loss <- processing.CI[Processing==processing.opt,Post_Processing.Mass.Loss]
+  emissions.annual.profile[Year==harvest.collection.year.diff,':='(Processing_Tons.CO2.per.BDT.biomass=processing.CI[Processing==post.harvest.processing,Tons.CO2.per.BDT.biomass],
+                                                                   Processing_Tons.CH4.per.BDT.biomass=processing.CI[Processing==post.harvest.processing,Tons.CH4.per.BDT.biomass],
+                                                                   Processing_Tons.N2O.per.BDT.biomass=processing.CI[Processing==post.harvest.processing,Tons.N2O.per.BDT.biomass])]
+  processing.mass.loss <- processing.CI[Processing==post.harvest.processing,Post_Processing.Mass.Loss]
   remove(processing.CI)
   
   # Now to tackle decay emissions. In spreadsheet form, we calculated the mass loss and 

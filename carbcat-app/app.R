@@ -19,7 +19,7 @@
 # =============================================================================
 
 source("../misc-functions.R")
-load.libraries(c("shiny","leaflet"))
+load.libraries(c("shiny","leaflet","raster"))
 
 # Define a UI for the shiny app
 ui <- fluidPage(
@@ -29,22 +29,31 @@ ui <- fluidPage(
     sidebarPanel(
       h3("Instructions"),
       helpText("Select your input for CARBCAT below:"),
-      radioButtons(inputId = "ag.or.forest",
+      radioButtons(inputId = "ag.or.forest", # Used for all modules
                    label = "Residue Sector",
                    choices = list("Forestry","Agriculture")),
-      selectInput(inputId = "treatment.type",
+      selectInput(inputId = "treatment.type", # Used for harvest/processingfor forestry and woody agriculture
                   label = "Treatment Type",
                   choices = list("Thin from below: 20% basal area",
                                  "Thin from below: 40% basal area",
                                  "Thin from above: 20% basal area",
                                  "Thin from above: 40% basal area",
                                  "You shouldn't actually see this option")),
-      selectInput(inputId = "post.harvest.processing",
+      selectInput(inputId = "post.harvest.processing", # Used in harvest/processing - processing of materials TO BE HARVESTED
                   label = "Post Harvest Processing",
                   choices = list("Briquette",
                                  "Torrefaction",
                                  "Pelletization",
                                  "None")),
+      selectInput(inputId = "in.field.processing", # Used in in-field ag, maybe forestry?
+                  label = "Post Harvest Processing",
+                  choices = list("Grinding/Dicing",
+                                 "None")),
+      selectInput(inputId = "burn.or.decay", # Used in in-field ag, in-field forestry.
+                  label = "In-Field Residue Fate",
+                  choices = list("Decay Only",
+                                 "Pile Burn",
+                                 "In-Field Burn")),
       selectInput(inputId = "possible.plants",
                   label = "Biomass Plant",
                   choices = list("DG Fairhaven Power, LLC",
@@ -57,6 +66,11 @@ ui <- fluidPage(
                   value = 50),
       sliderInput(inputId = "burned.biomass",
                   label = "Percent of Biomass Burned",
+                  min = 0,
+                  max = 100,
+                  value = 10),
+      sliderInput(inputId = "burn.year",
+                  label = "Year of Biomass Burning (If applicable)",
                   min = 0,
                   max = 100,
                   value = 10),
