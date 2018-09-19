@@ -14,7 +14,9 @@
 # ACTION ITEMS:
 # Index   Description                                                      Status
 # -----   --------------------------------------------------------------   ------
-# [1]     Develop decay functions for remainder of forestry/ag options     On-hold        
+# [1]     Develop decay functions for remainder of forestry/ag options     On-hold
+# [2]     "Primary Harvest Species" is depreciated. Update, and account    Waiting
+#         for ag/forestry differences.
 # ---------------------------------
 # INPUTS:
 # ag.or.forest: Value of "Agriculture" or "Forestry"

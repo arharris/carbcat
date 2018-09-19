@@ -21,6 +21,9 @@
 #
 #   2)    Fix the processing equipment selector function so it matches      IN-PROGRESS
 #         what we might need for processing.
+#   3)    "Primary Harvest Species" is depreciated. Update, and account    Waiting
+#         for ag/forestry differences.
+
 # ---------------------------------
 # INPUTS:
 # ag.or.forest: Value of "Agriculture" or "Forestry"

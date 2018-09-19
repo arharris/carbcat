@@ -22,6 +22,6 @@ setClass("location.data",
            slope = "numeric",
            biomass.market.volume = "character",
            pulp.market = "logical",
-           primary.harvest.species = "character"
+           forest.species = "character"
          )
         )

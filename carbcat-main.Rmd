@@ -52,19 +52,17 @@ this.location <- new("location.data",
                           slope = 0,
                           biomass.market.volume = "High Volume",
                           pulp.market = FALSE,
-                          primary.harvest.species = "Corn")
+                          forest.species = "Corn")
 
 ########################################################################################
+# Forestry applications will have dominant and sub-dominant species, stored as a single
+# variable (i.e. "BOOS" = "Blue Oak Dominant, Other Soft sub-dominant). We wil keep that 
+# as a string variable in the location data object.
+#
+# Agricultural species will be entirely user-dependent, and thus will have a different
+# variable name and will not be in location data.
 ########################################################################################
-########################################################################################
-# If we want to keep the primary harvest species for forestry, then in the shiny 
-# interface, have the "primary harvest species" be a drop-down that can overwrite if 
-# "Agriculture" is selected. If the primary forestry harvest species is going to be 
-# represented in k values only, remove it from the location object and put it as a shiny
-# menu for the agriculture case.
-########################################################################################
-########################################################################################
-########################################################################################
+
 
 ```
 We also need to load the other user-input data not expressly tied to location (things like "ag.or.forestry", or
@@ -85,7 +83,7 @@ For now, just define some dummy values. If "burn.year" isn't applicable, set it 
 # burn.year <- 1 # Year in which residues are burned - if no residue is being burned, this will be set arbitrarily large in-module.
 # land.management <- "None" #"None", "Scattering", "Re-incorporation"
 
-# Ag option
+# Ag option - ADD SPECIES
 ag.or.forest <- 'Agriculture'
 treatment.type <- 'None'
 initial.moisture <- 35
