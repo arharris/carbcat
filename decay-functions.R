@@ -26,57 +26,72 @@
 # ---------------------------------
 # OBJECTIVE:
 # This module contains decay fundtions for use in in-field modules and the 
-# harvest-processing module.
+# harvest-processing module. (I believe that decay will no longer be part of harvest-processing
+# due to fire needs - AH 9/19/2018)
 #
 # ---------------------------------
 # OUTPUTS:
 # The cumulative CO2, CH4, or N2O emissions at year X due to decay
 #
 # =============================================================================
+# For now, let us focus on forest decay. I need to figure out how decay is going to work for agriculture, how the decay constants 
+# will be stored, and whether land tillage will come into play
 
+# We need to determine the mass remaining, the mass lost to atmosphere, and the mass lost to duff for each of 4 size classes 
+# (coarse woody debris [CWD], fine, litter, and duff). We will need results for years 0-99
+
+
+
+
+
+
+########################################################################################################
+# These are the old decay functions. I am keeping them here incase we should need to reference them for 
+# any reason. These should be deleted before the final version of the code.
+########################################################################################################
 # These functions should be named as a concatenation of the relevant criteria
-Forestry.Mixed.decay <- function(species,years,scattered.fraction,piled.fraction) {
-  if(species=='CO2') {
-    return(scattered.fraction*exp(this.location@forestry.decay.rates$scattered.CO2.k*years)+piled.fraction*exp(this.location@forestry.decay.rates$piled.CO2.k*years))
-  } else if(species=='CH4') {
-    return(scattered.fraction*exp(this.location@forestry.decay.rates$scattered.CH4.k*years)+piled.fraction*exp(this.location@forestry.decay.rates$piled.CH4.k*years))
-  } else if(species=='N2O') {
-    return(scattered.fraction*exp(this.location@forestry.decay.rates$scattered.N2O.k*years)+piled.fraction*exp(this.location@forestry.decay.rates$piled.N2O.k*years))
-  } else {
-    cat('Calling a decay function on something other than CO2, CH4, and N2O')
-    return(-9999)
-  }
-}
-
-# Sample Ag decay format: (A0 * exp(R1*years) + A1 * exp(R2*years)) / 100
-
-# Dummy function
-Agriculture.Corn.decay <- function(species,years,scattered.fraction,piled.fraction) {
-  if(species=='CO2') {
-    #test <- location.obj@scattered.CO2.k
-    return(1-(31.7*exp(-0.0026*years)+4.79*exp(-0.00037*years))/100)
-  } else if(species=='CH4') {
-    #test <- location.obj@scattered.CH4.k
-    return(1-(30.7*exp(-0.0023*years)+3.79*exp(-0.00034*years))/100)
-  } else if(species=='N2O') {
-    #test <- location.obj@scattered.N2O.k
-    return(1-(29.7*exp(-0.0020*years)+2.79*exp(-0.00031*years))/100)
-  } else {
-    cat('Calling a decay function on something other than CO2, CH4, and N2O')
-    return(-9999)
-  }
-}
-
-# Dummy function
-Agriculture.Cotton.decay <- function(species,years,scattered.fraction,piled.fraction) {
-  if(species=='CO2') {
-    return(1-(17.3*exp(-0.00038*years)+18.9*exp(-0.00044*years))/100)
-  } else if(species=='CH4') {
-    return(1-(16.3*exp(-0.00033*years)+17.9*exp(-0.00039*years))/100)
-  } else if(species=='N2O') {
-    return(1-(15.3*exp(-0.00028*years)+16.9*exp(-0.00034*years))/100)
-  } else {
-    cat('Calling a decay function on something other than CO2, CH4, and N2O')
-    return(-9999)
-  }
-}
+# Forestry.Mixed.decay <- function(species,years,scattered.fraction,piled.fraction) {
+#   if(species=='CO2') {
+#     return(scattered.fraction*exp(this.location@forestry.decay.rates$scattered.CO2.k*years)+piled.fraction*exp(this.location@forestry.decay.rates$piled.CO2.k*years))
+#   } else if(species=='CH4') {
+#     return(scattered.fraction*exp(this.location@forestry.decay.rates$scattered.CH4.k*years)+piled.fraction*exp(this.location@forestry.decay.rates$piled.CH4.k*years))
+#   } else if(species=='N2O') {
+#     return(scattered.fraction*exp(this.location@forestry.decay.rates$scattered.N2O.k*years)+piled.fraction*exp(this.location@forestry.decay.rates$piled.N2O.k*years))
+#   } else {
+#     cat('Calling a decay function on something other than CO2, CH4, and N2O')
+#     return(-9999)
+#   }
+# }
+# 
+# # Sample Ag decay format: (A0 * exp(R1*years) + A1 * exp(R2*years)) / 100
+# 
+# # Dummy function
+# Agriculture.Corn.decay <- function(species,years,scattered.fraction,piled.fraction) {
+#   if(species=='CO2') {
+#     #test <- location.obj@scattered.CO2.k
+#     return(1-(31.7*exp(-0.0026*years)+4.79*exp(-0.00037*years))/100)
+#   } else if(species=='CH4') {
+#     #test <- location.obj@scattered.CH4.k
+#     return(1-(30.7*exp(-0.0023*years)+3.79*exp(-0.00034*years))/100)
+#   } else if(species=='N2O') {
+#     #test <- location.obj@scattered.N2O.k
+#     return(1-(29.7*exp(-0.0020*years)+2.79*exp(-0.00031*years))/100)
+#   } else {
+#     cat('Calling a decay function on something other than CO2, CH4, and N2O')
+#     return(-9999)
+#   }
+# }
+# 
+# # Dummy function
+# Agriculture.Cotton.decay <- function(species,years,scattered.fraction,piled.fraction) {
+#   if(species=='CO2') {
+#     return(1-(17.3*exp(-0.00038*years)+18.9*exp(-0.00044*years))/100)
+#   } else if(species=='CH4') {
+#     return(1-(16.3*exp(-0.00033*years)+17.9*exp(-0.00039*years))/100)
+#   } else if(species=='N2O') {
+#     return(1-(15.3*exp(-0.00028*years)+16.9*exp(-0.00034*years))/100)
+#   } else {
+#     cat('Calling a decay function on something other than CO2, CH4, and N2O')
+#     return(-9999)
+#   }
+# }
