@@ -5,6 +5,7 @@
 # ==========================================================================================
 # VERSION:
 #   2018-05-25 Initial Development
+#   2019-01-07 location.data depreciated.
 # ==========================================================================================
 # This defines an object class to store location information highlighted from GIS
 # applications that will be used for the CARBCAT model. However we interface GIS to R, the 

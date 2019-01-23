@@ -3,17 +3,27 @@ model segments.
 
 Source relevant module and function files.
 ```{r}
-source("class_LocationData.R")
+#source("class_LocationData.R")
 source("class_ModuleOutput.R")
 source("harvest-processing.R")
 
+```
 
+Load needed library functions
+```{r}
+library(raster)
 
 ```
 
+To make multiple runs with different options, easier, we're putting all user options and filepaths in an external csv file,
+which we read in here.
+```{r}
+user_input_filepath <- '/Volumes/744GB-Storage/Dropbox/serc/carbcat/cbrec_inputs.csv'
+user_inputs <- data.table(read.csv(user_input_filepath, stringsAsFactors = FALSE))
+```
+
 Load up the location-specific information gleaned from GIS data. 
-We don't yet know how we are going to interface GIS data with R, but we do know that information
-will be stored in a location.data object. Currently, a location.data object contains the following slots:
+Originally, we planned on using a location.data object ("this.location") containing the following slots:
 
 1) land.ownership = "character"
 2) forestry.decay.rates = "data.frame"
@@ -22,10 +32,14 @@ will be stored in a location.data object. Currently, a location.data object cont
 5) pulp.market = "logical"
 6) primary.harvest.species = "character"
 
-Throughout this script, the variable for the location object will be named "this.location." It will be a global
-variable, used throughout functions and modules.
+However, based on experience from the webtool, the location.data object will likely be too cumbersome to 
+use in offline analysis, and we handle the webtool with Python to avoid also having to coordinate with R.
 
-For now, load up a location.data object with dummy data. If you want to make a fresh location 
+We want to be able to analyze on the level of individal tiles, if necessary. A large data table will allow
+us to do this more quickly and easily than a location data object, although a similar construction may make
+sense for user-defined variables.
+
+For reference: here's what we had planned for the location.data object If you want to make a fresh location 
 object, use this code: (forestry decay currently set for Excel location FarNorCal)
 this.location <- new("location.data",
                           land.ownership = "Private",
@@ -39,65 +53,47 @@ this.location <- new("location.data",
                           biomass.market.volume = "High Volume",
                           pulp.market = FALSE,
                           primary.harvest.species = "Corn")
+
+For forestry data:
+To load up the location-specific date, first we load the FCID_WGS ratser layer. This has over a billion data points, and may
+crash RStudio. Fortunately, most of those points are empty. Once loaded, convert the RasterLayer to a data frame, and extract
+the subset of points that correspond to actual data. 
+
+Once we have the smaller data set, convert to a data table and combine with the residue and decay tables.
+
+For agricultural data:
+(TBA)
 ```{r}
-#load("dummy-location-obj.Rdata")
-this.location <- new("location.data",
-                          land.ownership = "Private",
-                          forestry.decay.rates = data.frame(scattered.CO2.k=-0.08,
-                                                            scattered.CH4.k=-0.06,
-                                                            scattered.N2O.k=-0.09,
-                                                            piled.CO2.k=-0.04,
-                                                            piled.CH4.k=-0.054,
-                                                            piled.N2O.k=-0.081),
-                          slope = 0,
-                          biomass.market.volume = "High Volume",
-                          pulp.market = FALSE,
-                          forest.species = "Corn")
+if(user_inputs[variable=='ag_or_forest',value]=='forest') {
+  full_CA_raster <- raster(user_inputs[variable=='fcid_wgs_filepath',value])
+  
+  # convert to a data frame. This may crash things.
+  full_CA_df <- as.data.frame(full_CA_raster,xy=TRUE)
+  
+  # The full raster dataset is a square, so it will include non-forested areas within California, a chunk of the Pacifc Ocean,
+  # and a fair bit of Nevada. These locations will have an FCID value of NA; trim it out using subset()
+  full_CA_df <- subset(full_CA_df,!is.na(FCID_WGS))
+  
+  # Convert to a data table, and delete the data frame
+  full_CA_FCID <- data.table(full_CA_df)
+  full_CA_df <- NULL
+  setkey(full_CA_FCID,FCID_WGS)
+  
+  # We have a full table of WGS coordinates and FCID values. Decay and fire values will be pre-run in tile format, so we will need to load
+  # the tiles up into the main WGS table.
+}
 
-########################################################################################
-# Forestry applications will have dominant and sub-dominant species, stored as a single
-# variable (i.e. "BOOS" = "Blue Oak Dominant, Other Soft sub-dominant). We wil keep that 
-# as a string variable in the location data object.
-#
-# Agricultural species will be entirely user-dependent, and thus will have a different
-# variable name and will not be in location data.
-########################################################################################
-
+if(user_inputs[variable==ag_or_forest,value]=='agricultural') {
+  print('This code has yet to be written')
+}
 
 ```
-We also need to load the other user-input data not expressly tied to location (things like "ag.or.forestry", or
-the agricultural residue under consideration). I imagine that this will be input from the Shiny user interface.
 
-For now, just define some dummy values. If "burn.year" isn't applicable, set it arbitrarily high here.
+
+
 ```{r}
-# Forestry option
-# ag.or.forest <- 'Forestry'
-# treatment.type <- 'None'
-# initial.moisture <- 35
-# harvest.collection.year.diff <- 4
-# comminution.opt <- 'Grinding'
-# post.harvest.processing <- 'None'
-# scattered.fraction <- 0.5
-# piled.fraction <- 0.5
-# burn.or.decay <- "Pile Burn" # "Decay Only", "Pile Burn", "In-Field Burn"
-# burn.year <- 1 # Year in which residues are burned - if no residue is being burned, this will be set arbitrarily large in-module.
-# land.management <- "None" #"None", "Scattering", "Re-incorporation"
 
-# Ag option - ADD SPECIES
-ag.or.forest <- 'Agriculture'
-treatment.type <- 'None'
-initial.moisture <- 35
-harvest.collection.year.diff <- 4
-comminution.opt <- 'Grinding'
-post.harvest.processing <- 'None'
-scattered.fraction <- 0.5
-piled.fraction <- 0.5
-burn.or.decay <- "Pile Burn" # "Decay Only", "Pile Burn", "In-Field Burn"
-burn.year <- 15 # Year in which residues are burned - if no residue is being burned, this will be set arbitrarily large in-module.
-land.management <- "None" #"None", "Scattering", "Re-incorporation"
 
-# If there is no burning, then set the burn year absurdly high.
-if(burn.or.decay=="Decay Only") { burn.year <- 802701 }
 
 ```
 
