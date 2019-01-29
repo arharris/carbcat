@@ -12,6 +12,7 @@ source("harvest-processing.R")
 Load needed library functions
 ```{r}
 library(raster)
+library(rgdal)
 
 ```
 
@@ -55,8 +56,9 @@ this.location <- new("location.data",
                           primary.harvest.species = "Corn")
 
 For forestry data:
-To load up the location-specific date, first we load the FCID_WGS ratser layer. This has over a billion data points, and may
-crash RStudio. Fortunately, most of those points are empty. Once loaded, convert the RasterLayer to a data frame, and extract
+To load up the location-specific date, first we load the FCID_WGS ratser layer.This has over a billion data points, and may
+crash RStudio. In many cases, we will crop the dataset down to a shapefile supplied by the user (or, more accurately, mask the dataset).
+If the dataset is full, most of those points are empty. In either case, once loaded, convert the RasterLayer to a data frame, and extract
 the subset of points that correspond to actual data. 
 
 Once we have the smaller data set, convert to a data table and combine with the residue and decay tables.
@@ -66,30 +68,90 @@ For agricultural data:
 ```{r}
 if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   full_CA_raster <- raster(user_inputs[variable=='fcid_wgs_filepath',value])
+### Uncomment these lines back out when we have a slope file in WGS  
+  # slope_raster <- raster(user_inputs[variable=='slope_filepath',value])
+  # names(slope_raster) <- "cell_slope"
+  ### 
   
-  # convert to a data frame. This may crash things.
+  # If the user inputs specify a study area mask file, load the shapefile and mask the raster to the shape file.
+  if(!is.na(user_inputs[variable=='study_area_mask_file',value])) {
+    study_area_mask <- readOGR(user_inputs[variable=='study_area_mask_file',value])
+    full_CA_raster <- mask(full_CA_raster,study_area_mask)
+### Uncomment these lines back out when we have a slope file in WGS
+    # slope_raster <- mask(slope_raster,study_area_mask)
+###    
+  }
+  
+  # convert raster objects to data frames. This may crash things.
   full_CA_df <- as.data.frame(full_CA_raster,xy=TRUE)
+
+    # The full raster dataset is a square, so it will include non-forested areas within California, a chunk of the Pacifc Ocean,
+  # and a fair bit of Nevada. These locations will have an FCID value of NA; trim it out using subset()
+  full_CA_df <- subset(full_CA_df,!is.na(FCID_WGS))
+  
+  ### Uncomment these lines back out when we have a slope file in WGS  
+  # Repeat with slope
+  # slope_df <- as.data.frame(slope_raster,xy=TRUE)
   
   # The full raster dataset is a square, so it will include non-forested areas within California, a chunk of the Pacifc Ocean,
   # and a fair bit of Nevada. These locations will have an FCID value of NA; trim it out using subset()
-  full_CA_df <- subset(full_CA_df,!is.na(FCID_WGS))
+  # slope_df <- subset(slope_df,!is.na(cell_slope))
+  ###
   
   # Convert to a data table, and delete the data frame
   full_CA_FCID <- data.table(full_CA_df)
   full_CA_df <- NULL
+  setkey(full_CA_FCID,x,y)
+  
+  ############
+  # When we have a slope file projected in WGS, we can remove this. and uncomment some of the other lines. Until then, let's
+  # make a fake data set from full_CA_FCID. 
+  slope_dt <- copy(full_CA_FCID)
+  slope_dt[,cell_slope:=FCID_WGS/1e9]
+  slope_dt[,FCID_WGS:=NULL]
+  setkey(slope_dt,x,y)
+  # REMEMBER TO DELETE THIS AFTER WE HAVE A WGS-PROJECTED SLOPE RASTER
+  ############
+  
+  ### Uncomment these lines back out when we have a slope file in WGS  
+  # Repeat with slope
+  # slope_dt <- data.table(slope_df)
+  # slope_df <- NULL
+  # setkey(slope_dt,x,y)
+  ###
+  
+  # Combine the slope with the FCID data tables
+  full_CA_FCID <- full_CA_FCID[slope_dt]
+  # THERE MAY BE SOME ADJUSTMENTS NEEDED ONCE WE USE A REAL SLOPE RASTER
+  
+  # Delete the slope data table to save on memory
+  slope_dt <- NULL
+  
+  # Read in the residue load values from a csv file. These values are indexed by FCID_WGS, so that is how we will join the 2 tables
+  fcid_table <- data.table(read.csv(user_inputs[variable=='residue_treatment_filepath',value]))
+  setkey(fcid_table,FCID2018)
   setkey(full_CA_FCID,FCID_WGS)
+  full_CA_FCID <- full_CA_FCID[fcid_table[Treatment==user_inputs[variable=='treatment_type',value]]]
+  
+  # There will be some overlap for FCID values that don't appear in the data set. They will have non-existant x & y values. Trim them.
+  full_CA_FCID <- full_CA_FCID[!is.na(x)]
+  
+  # If there is a pulp market, then pulp residues won't factor into our analysis and we can remove them.
+  if(user_inputs[variable=='has_pulp_market',value]) {
+    full_CA_FCID[,':='(Pulp_6t9_tonsAcre=NULL,Pulp_4t6_tonsAcre=NULL)]
+  }
   
   # We have a full table of WGS coordinates and FCID values. Decay and fire values will be pre-run in tile format, so we will need to load
   # the tiles up into the main WGS table.
 }
 
-if(user_inputs[variable==ag_or_forest,value]=='agricultural') {
+if(user_inputs[variable=='ag_or_forest',value]=='agricultural') {
   print('This code has yet to be written')
 }
 
 ```
 
-
+We now have a spatially-indexed data table with residue loading information and cell slope values. Now we figure out what the technically recoverable residue is.
 
 ```{r}
 
