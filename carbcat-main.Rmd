@@ -68,7 +68,7 @@ For agricultural data:
 ```{r}
 if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   full_CA_raster <- raster(user_inputs[variable=='fcid_wgs_filepath',value])
-### Uncomment these lines back out when we have a slope file in WGS  
+### Uncomment these lines back out when we have a slope file that matches the coordinate system of the FCID raster
   # slope_raster <- raster(user_inputs[variable=='slope_filepath',value])
   # names(slope_raster) <- "cell_slope"
   ### 
@@ -89,7 +89,7 @@ if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   # and a fair bit of Nevada. These locations will have an FCID value of NA; trim it out using subset()
   full_CA_df <- subset(full_CA_df,!is.na(FCID_WGS))
   
-  ### Uncomment these lines back out when we have a slope file in WGS  
+  ### Uncomment these lines back out when we have a slope file that matches the coordinate system of the FCID raster 
   # Repeat with slope
   # slope_df <- as.data.frame(slope_raster,xy=TRUE)
   
@@ -104,16 +104,16 @@ if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   setkey(full_CA_FCID,x,y)
   
   ############
-  # When we have a slope file projected in WGS, we can remove this. and uncomment some of the other lines. Until then, let's
+  # When we have a slope file projected in the same coordinate system of the FCID raster, we can remove this. and uncomment some of the other lines. Until then, let's
   # make a fake data set from full_CA_FCID. 
   slope_dt <- copy(full_CA_FCID)
   slope_dt[,cell_slope:=FCID_WGS/1e9]
   slope_dt[,FCID_WGS:=NULL]
   setkey(slope_dt,x,y)
-  # REMEMBER TO DELETE THIS AFTER WE HAVE A WGS-PROJECTED SLOPE RASTER
+  # REMEMBER TO DELETE THIS AFTER WE HAVE MATCHING SLOPE AND FCID RASTER
   ############
   
-  ### Uncomment these lines back out when we have a slope file in WGS  
+  ### Uncomment these lines back out when we have a slope file that matches the coordinate system of the FCID raster 
   # Repeat with slope
   # slope_dt <- data.table(slope_df)
   # slope_df <- NULL
@@ -132,14 +132,13 @@ if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   setkey(fcid_table,FCID2018)
   setkey(full_CA_FCID,FCID_WGS)
   full_CA_FCID <- full_CA_FCID[fcid_table[Treatment==user_inputs[variable=='treatment_type',value]]]
+  setkey(full_CA_FCID,x,y)
   
   # There will be some overlap for FCID values that don't appear in the data set. They will have non-existant x & y values. Trim them.
   full_CA_FCID <- full_CA_FCID[!is.na(x)]
   
-  # If there is a pulp market, then pulp residues won't factor into our analysis and we can remove them.
-  if(user_inputs[variable=='has_pulp_market',value]) {
-    full_CA_FCID[,':='(Pulp_6t9_tonsAcre=NULL,Pulp_4t6_tonsAcre=NULL)]
-  }
+  # Eliminate the treatment and FCID columns, we do not need them.
+  full_CA_FCID[,':='(FCID_WGS=NULL,Treatment=NULL)]
   
   # We have a full table of WGS coordinates and FCID values. Decay and fire values will be pre-run in tile format, so we will need to load
   # the tiles up into the main WGS table.
@@ -154,9 +153,97 @@ if(user_inputs[variable=='ag_or_forest',value]=='agricultural') {
 We now have a spatially-indexed data table with residue loading information and cell slope values. Now we figure out what the technically recoverable residue is.
 
 ```{r}
+# The harvest system and type will vary by slope; read in the harvest system file to get the slope criteria
+harvest_system_criteria <- data.table(read.csv(user_inputs[variable=='harvest_system_file',value]))
+
+# Remove the harvest systems screen out by having min/max slopes less than 0
+harvest_system_criteria <- harvest_system_criteria[min_slope>=0&max_slope>=0,]
+
+# If any of the slope criteria overlaps, we will run into a problem. I want to program a check for that here, but don't know how I want to do that. 
+# Note that we will assume min criteria is inclusive (i.e. x >= min), max is exclusive (i.e. x < max). So, for complete criteria, the min should be 0, the max should be greater than 1. 
+# The other mins/maxes should have a match in the data set.
+# <Insert code for check here>
+
+# Apply the appropriate harvest system based on cell slope
+full_CA_FCID[,harvest_system := harvest_system_criteria[min_slope==min(min_slope),harvest_system]]
+
+for(row.i in nrow(harvest_system_criteria[min_slope!=min(min_slope)])) {
+  full_CA_FCID[cell_slope >= harvest_system_criteria[row.i,min_slope] & cell_slope < harvest_system_criteria[row.i,max_slope],harvest_system := harvest_system_criteria[row.i,harvest_system]]
+}
+
+# The technically available residues will be based on silvicultural treatment, harvest system/type (currently the harvest_system column),
+# burn type, biomass collection, and pulp market. Within a scenario, treatment, burn type, biomass collection, and pulp market are decided 
+# across the entire study area. Harvest system will vary based on slope. Rather than create an ID for full_CA_FCID and merging with the complete scenario martix,
+# create a smaller scenario matrix filtered through the user inputs, and merge with full_CA_FCID based upon harvest_system.
+complete_scenario_matrix <- data.table(read.csv(user_inputs[variable=='scenario_matrix_file',value]))
+
+# Trim to the treatment, burn type, biomass collection, and pulp market
+scenario_matrix <- copy(complete_scenario_matrix[Silvicultural.Treatment==user_inputs[variable=='treatment_type',value] & Burn.Type==user_inputs[variable=='burn_type',value] & Biomass.Collection==user_inputs[variable=='biomass_collection',value] & Pulp.Market==user_inputs[variable=='has_pulp_market',value],])
+
+# Running into a memory issue here; we're looking at 158 million rows and 12 columns, and merging with the scenario matrix would more than double that.
+# We're going to try breaking up the scenario matrix into one segment at a time (recovered, merchantable, (do we need merchantable?), landing piled, field piled, scattered)
+# Merge one segment of scenario matrix at a time, transform the needed columns, and then clear out. We're about at max data table memory.
+
+# Merge senario matrix with full_CA_FCID
+scenario_matrix[,merge_column := paste(Harvest.System,Harvest.Type,sep='-')]
+scenario_matrix[,':='(Silvicultural.Treatment=NULL, Harvest.System=NULL, Harvest.Type=NULL, Burn.Type=NULL, Biomass.Collection=NULL, Pulp.Market=NULL)]
+setkey(scenario_matrix,merge_column)
+setkey(full_CA_FCID,harvest_system)
+full_CA_FCID <- scenario_matrix[full_CA_FCID]
 
 
 
+# Combine the technically available fractions with the gross resource base.
+full_CA_FCID[,':='(Recovered_Stem9Plus_tonsAcre = Recovered_Stem9Plus * Stem9Plus_tonsAcre,
+                   Recovered_Stem6to9_tonsAcre = Recovered_Stem6to9 * Stem6to9_tonsAcre,
+                   Recovered_Stem4to6_tonsAcre = Recovered_Stem4to6 * Stem4to6_tonsAcre,
+                   Recovered_Bark9Plus_tonsAcre = Recovered_Bark9Plus * Bark9Plus_tonsAcre,
+                   Recovered_Bark6to9_tonsAcre = Recovered_Bark6to9 * Bark6to9_tonsAcre,
+                   Recovered_Bark4to6_tonsAcre = Recovered_Bark4to6 * Bark4to6_tonsAcre,
+                   Recovered_Branch_tonsAcre = Recovered_Branch * Branch_tonsAcre,
+                   Recovered_Foliage_tonsAcre = Recovered_Foliage * Foliage_tonsAcre,
+                   Merchantable_Stem9Plus_tonsAcre = Merchantable_Stem9Plus * Stem9Plus_tonsAcre,
+                   Merchantable_Stem6to9_tonsAcre = Merchantable_Stem6to9 * Stem6to9_tonsAcre,
+                   Merchantable_Stem4to6_tonsAcre = Merchantable_Stem4to6 * Stem4to6_tonsAcre,
+                   Merchantable_Bark9Plus_tonsAcre = Merchantable_Bark9Plus * Bark9Plus_tonsAcre,
+                   Merchantable_Bark6to9_tonsAcre = Merchantable_Bark6to9 * Bark6to9_tonsAcre,
+                   Merchantable_Bark4to6_tonsAcre = Merchantable_Bark4to6 * Bark4to6_tonsAcre,
+                   Merchantable_Branch_tonsAcre = Merchantable_Branch * Branch_tonsAcre,
+                   Merchantable_Foliage_tonsAcre = Merchantable_Foliage * Foliage_tonsAcre,
+                   LandingPiled_Stem9Plus_tonsAcre = LandingPiled_Stem9Plus * Stem9Plus_tonsAcre,
+                   LandingPiled_Stem6to9_tonsAcre = LandingPiled_Stem6to9 * Stem6to9_tonsAcre,
+                   LandingPiled_Stem4to6_tonsAcre = LandingPiled_Stem4to6 * Stem4to6_tonsAcre,
+                   LandingPiled_Bark9Plus_tonsAcre = LandingPiled_Bark9Plus * Bark9Plus_tonsAcre,
+                   LandingPiled_Bark6to9_tonsAcre = LandingPiled_Bark6to9 * Bark6to9_tonsAcre,
+                   LandingPiled_Bark4to6_tonsAcre = LandingPiled_Bark4to6 * Bark4to6_tonsAcre,
+                   LandingPiled_Branch_tonsAcre = LandingPiled_Branch * Branch_tonsAcre,
+                   LandingPiled_Foliage_tonsAcre = LandingPiled_Foliage * Foliage_tonsAcre,
+                   FieldPiled_Stem9Plus_tonsAcre = FieldPiled_Stem9Plus * Stem9Plus_tonsAcre,
+                   FieldPiled_Stem6to9_tonsAcre = FieldPiled_Stem6to9 * Stem6to9_tonsAcre,
+                   FieldPiled_Stem4to6_tonsAcre = FieldPiled_Stem4to6 * Stem4to6_tonsAcre,
+                   FieldPiled_Bark9Plus_tonsAcre = FieldPiled_Bark9Plus * Bark9Plus_tonsAcre,
+                   FieldPiled_Bark6to9_tonsAcre = FieldPiled_Bark6to9 * Bark6to9_tonsAcre,
+                   FieldPiled_Bark4to6_tonsAcre = FieldPiled_Bark4to6 * Bark4to6_tonsAcre,
+                   FieldPiled_Branch_tonsAcre = FieldPiled_Branch * Branch_tonsAcre,
+                   FieldPiled_Foliage_tonsAcre = FieldPiled_Foliage * Foliage_tonsAcre,
+                   Scattered_Stem9Plus_tonsAcre = Scattered_Stem9Plus * Stem9Plus_tonsAcre,
+                   Scattered_Stem6to9_tonsAcre = Scattered_Stem6to9 * Stem6to9_tonsAcre,
+                   Scattered_Stem4to6_tonsAcre = Scattered_Stem4to6 * Stem4to6_tonsAcre,
+                   Scattered_Bark9Plus_tonsAcre = Scattered_Bark9Plus * Bark9Plus_tonsAcre,
+                   Scattered_Bark6to9_tonsAcre = Scattered_Bark6to9 * Bark6to9_tonsAcre,
+                   Scattered_Bark4to6_tonsAcre = Scattered_Bark4to6 * Bark4to6_tonsAcre,
+                   Scattered_Branch_tonsAcre = Scattered_Branch * Branch_tonsAcre,
+                   Scattered_Foliage_tonsAcre = Scattered_Foliage * Foliage_tonsAcre
+)]
+
+
+ [1] "Recovered_Stem9Plus"    "Recovered_Stem6to9"     "Recovered_Stem4to6"     "Recovered_Bark9Plus"    "Recovered_Bark6to9"     "Recovered_Bark4to6"     "Recovered_Branch"       "Recovered_Foliage"     
+ [9] "Merchantable_Stem9Plus" "Merchantable_Stem6to9"  "Merchantable_Stem4to6"  "Merchantable_Bark9Plus" "Merchantable_Bark6to9"  "Merchantable_Bark4to6"  "Merchantable_Branch"    "Merchantable_Foliage"  
+[17] "LandingPiled_Stem9Plus" "LandingPiled_Stem6to9"  "LandingPiled_Stem4to6"  "LandingPiled_Bark9Plus" "LandingPiled_Bark6to9"  "LandingPiled_Bark4to6"  "LandingPiled_Branch"    "LandingPiled_Foliage"  
+[25] "FieldPiled_Stem9Plus"   "FieldPiled_Stem6to9"    "FieldPiled_Stem4to6"    "FieldPiled_Bark9Plus"   "FieldPiled_Bark6to9"    "FieldPiled_Bark4to6"    "FieldPiled_Branch"      "FieldPiled_Foliage"    
+[33] "Scattered_Stem9Plus"    "Scattered_Stem6to9"     "Scattered_Stem4to6"     "Scattered_Bark9Plus"    "Scattered_Bark6to9"     "Scattered_Bark4to6"     "Scattered_Branch"       "Scattered_Foliage"     
+[41] "merge_column"           "x"                      "y"                      "FCID_WGS"               "cell_slope"             "Stem6to9_tonsAcre"      "Stem9Plus_tonsAcre"     "Stem4to6_tonsAcre"     
+[49] "Bark6to9_tonsAcre"      "Bark9Plus_tonsAcre"     "Bark4to6_tonsAcre"      "Branch_tonsAcre"        "Foliage_tonsAcre"       "Treatment"   
 ```
 
 (The order of module calls will change, right now they are ordered by when I coded them.)
