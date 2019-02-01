@@ -11,6 +11,7 @@ source("harvest-processing.R")
 
 Load needed library functions
 ```{r}
+library(data.table)
 library(raster)
 library(rgdal)
 
@@ -83,6 +84,12 @@ if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   }
   
   # convert raster objects to data frames. This may crash things.
+    ##########################################################################################
+  ##########################################################################################
+  # Look into if we can combine the subset line below into the as.data.frame line here. Also, 
+  # look if we can stack FCID and slope rasters to see if we can load them at the same time.
+  ##########################################################################################
+    ##########################################################################################
   full_CA_df <- as.data.frame(full_CA_raster,xy=TRUE)
 
     # The full raster dataset is a square, so it will include non-forested areas within California, a chunk of the Pacifc Ocean,
@@ -120,7 +127,7 @@ if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   # setkey(slope_dt,x,y)
   ###
   
-  # Combine the slope with the FCID data tables
+  # Combine the slope with the FCID data tables - THIS MAY NOT BE NECESSARY IF WE CAN LOAD AS STACKS.
   full_CA_FCID <- full_CA_FCID[slope_dt]
   # THERE MAY BE SOME ADJUSTMENTS NEEDED ONCE WE USE A REAL SLOPE RASTER
   
@@ -164,6 +171,10 @@ harvest_system_criteria <- harvest_system_criteria[min_slope>=0&max_slope>=0,]
 # The other mins/maxes should have a match in the data set.
 # <Insert code for check here>
 
+#######################################################################################################################################################
+# Cell slope DOES NOT max out at 100%. Add an addtional category "Not_Harvestable", for cell slopes that prevent any kind of harvest.
+#######################################################################################################################################################
+
 # Apply the appropriate harvest system based on cell slope
 full_CA_FCID[,harvest_system := harvest_system_criteria[min_slope==min(min_slope),harvest_system]]
 
@@ -184,6 +195,10 @@ scenario_matrix <- copy(complete_scenario_matrix[Silvicultural.Treatment==user_i
 # We're going to try breaking up the scenario matrix into one segment at a time (recovered, merchantable, (do we need merchantable?), landing piled, field piled, scattered)
 # Merge one segment of scenario matrix at a time, transform the needed columns, and then clear out. We're about at max data table memory.
 
+########################################
+# Combine stem and bark residues.
+########################################
+
 # Merge senario matrix with full_CA_FCID
 scenario_matrix[,merge_column := paste(Harvest.System,Harvest.Type,sep='-')]
 scenario_matrix[,':='(Silvicultural.Treatment=NULL, Harvest.System=NULL, Harvest.Type=NULL, Burn.Type=NULL, Biomass.Collection=NULL, Pulp.Market=NULL)]
@@ -192,6 +207,9 @@ setkey(full_CA_FCID,harvest_system)
 full_CA_FCID <- scenario_matrix[full_CA_FCID]
 
 
+########################################
+# Old code - column names have changed
+########################################
 
 # Combine the technically available fractions with the gross resource base.
 full_CA_FCID[,':='(Recovered_Stem9Plus_tonsAcre = Recovered_Stem9Plus * Stem9Plus_tonsAcre,
