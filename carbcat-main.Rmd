@@ -159,6 +159,13 @@ if(user_inputs[variable=='ag_or_forest',value]=='agricultural') {
 
 We now have a spatially-indexed data table with residue loading information and cell slope values. Now we figure out what the technically recoverable residue is.
 
+# DEVELOPMENT UPDATE:
+full_CA_FCID is too big to run in its entirety (issue of RAM). For development (and possibly for other runs), we need to break it into smaller data sets.
+```{r}
+# For development
+full_CA_FCID <- full_CA_FCID[1:10000000,]
+```
+
 ```{r}
 # The harvest system and type will vary by slope; read in the harvest system file to get the slope criteria
 harvest_system_criteria <- data.table(read.csv(user_inputs[variable=='harvest_system_file',value]))
@@ -209,6 +216,7 @@ full_CA_FCID <- scenario_matrix[full_CA_FCID]
 
 ########################################
 # Old code - column names have changed
+# Update 2/19: I'm not seeing this? 
 ########################################
 
 # Combine the technically available fractions with the gross resource base.
@@ -254,15 +262,43 @@ full_CA_FCID[,':='(Recovered_Stem9Plus_tonsAcre = Recovered_Stem9Plus * Stem9Plu
                    Scattered_Foliage_tonsAcre = Scattered_Foliage * Foliage_tonsAcre
 )]
 
+# Trim out the columns we no longer need
+full_CA_FCID[,':='(Recovered_Stem9Plus = NULL, Stem9Plus_tonsAcre = NULL, Recovered_Stem6to9 = NULL, Stem6to9_tonsAcre = NULL, Recovered_Stem4to6 = NULL,
+                   Stem4to6_tonsAcre = NULL, Recovered_Bark9Plus = NULL, Bark9Plus_tonsAcre = NULL, Recovered_Bark6to9 = NULL, Bark6to9_tonsAcre = NULL,
+                   Recovered_Bark4to6 = NULL, Bark4to6_tonsAcre = NULL, Recovered_Branch = NULL, Branch_tonsAcre = NULL, Recovered_Foliage = NULL,
+                   Foliage_tonsAcre = NULL, Merchantable_Stem9Plus = NULL, Merchantable_Stem6to9 = NULL, Merchantable_Stem4to6 = NULL,  Merchantable_Bark9Plus = NULL,
+                   Merchantable_Bark6to9 = NULL, Merchantable_Bark4to6 = NULL, Merchantable_Branch = NULL, Merchantable_Foliage = NULL, LandingPiled_Stem9Plus = NULL,
+                   LandingPiled_Stem6to9 = NULL, LandingPiled_Stem4to6 = NULL, LandingPiled_Bark9Plus = NULL, LandingPiled_Bark6to9 = NULL, LandingPiled_Bark4to6 = NULL, 
+                   LandingPiled_Branch = NULL, LandingPiled_Foliage = NULL, FieldPiled_Stem9Plus = NULL, FieldPiled_Stem6to9 = NULL, FieldPiled_Stem4to6 = NULL, 
+                   FieldPiled_Bark9Plus = NULL, FieldPiled_Bark6to9 = NULL, FieldPiled_Bark4to6 = NULL, FieldPiled_Branch = NULL, FieldPiled_Foliage = NULL,
+                   Scattered_Stem9Plus = NULL, Scattered_Stem6to9 = NULL, Scattered_Stem4to6 = NULL, Scattered_Bark9Plus = NULL, Scattered_Bark6to9 = NULL,
+                   Scattered_Bark4to6 = NULL, Scattered_Branch = NULL, Scattered_Foliage = NULL
+)]
 
- [1] "Recovered_Stem9Plus"    "Recovered_Stem6to9"     "Recovered_Stem4to6"     "Recovered_Bark9Plus"    "Recovered_Bark6to9"     "Recovered_Bark4to6"     "Recovered_Branch"       "Recovered_Foliage"     
- [9] "Merchantable_Stem9Plus" "Merchantable_Stem6to9"  "Merchantable_Stem4to6"  "Merchantable_Bark9Plus" "Merchantable_Bark6to9"  "Merchantable_Bark4to6"  "Merchantable_Branch"    "Merchantable_Foliage"  
-[17] "LandingPiled_Stem9Plus" "LandingPiled_Stem6to9"  "LandingPiled_Stem4to6"  "LandingPiled_Bark9Plus" "LandingPiled_Bark6to9"  "LandingPiled_Bark4to6"  "LandingPiled_Branch"    "LandingPiled_Foliage"  
-[25] "FieldPiled_Stem9Plus"   "FieldPiled_Stem6to9"    "FieldPiled_Stem4to6"    "FieldPiled_Bark9Plus"   "FieldPiled_Bark6to9"    "FieldPiled_Bark4to6"    "FieldPiled_Branch"      "FieldPiled_Foliage"    
-[33] "Scattered_Stem9Plus"    "Scattered_Stem6to9"     "Scattered_Stem4to6"     "Scattered_Bark9Plus"    "Scattered_Bark6to9"     "Scattered_Bark4to6"     "Scattered_Branch"       "Scattered_Foliage"     
-[41] "merge_column"           "x"                      "y"                      "FCID_WGS"               "cell_slope"             "Stem6to9_tonsAcre"      "Stem9Plus_tonsAcre"     "Stem4to6_tonsAcre"     
-[49] "Bark6to9_tonsAcre"      "Bark9Plus_tonsAcre"     "Bark4to6_tonsAcre"      "Branch_tonsAcre"        "Foliage_tonsAcre"       "Treatment"   
+# We now have a data table of the tons per acre for each cell within the study area. No we analyze the use case (collecting residues for power plants), and the reference case (residues are not collected for power plants).
+
 ```
+
+Load the decay rate rasters
+```{r}
+
+
+```
+
+
+
+Calculating the Reference Case Emissions
+```{r}
+# The user input variable "burn_type" will specify the nature of the reference case: a value of "Pile Burn," "Broadcast Burn," or "Jackpot Burn" will be intentionally burned and then follow decay/wildfire, "None" will just follow decay/wildfire.
+
+
+
+```
+
+
+The use cases are going to need a variable to identify the specific use case: collect from landing only, collect from landing and broadcast burn, and collect residues from landing and field.
+
+
 
 (The order of module calls will change, right now they are ordered by when I coded them.)
 
