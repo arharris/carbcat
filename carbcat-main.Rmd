@@ -57,7 +57,7 @@ this.location <- new("location.data",
                           primary.harvest.species = "Corn")
 
 For forestry data:
-To load up the location-specific date, first we load the FCID_WGS ratser layer.This has over a billion data points, and may
+To load up the location-specific date, first we load the FCID_code ratser layer.This has over a billion data points, and may
 crash RStudio. In many cases, we will crop the dataset down to a shapefile supplied by the user (or, more accurately, mask the dataset).
 If the dataset is full, most of those points are empty. In either case, once loaded, convert the RasterLayer to a data frame, and extract
 the subset of points that correspond to actual data. 
@@ -68,16 +68,17 @@ For agricultural data:
 (TBA)
 ```{r}
 if(user_inputs[variable=='ag_or_forest',value]=='forest') {
-  full_CA_raster <- raster(user_inputs[variable=='fcid_wgs_filepath',value])
+  study_area_raster <- raster(user_inputs[variable=='fcid_code_filepath',value])
 ### Uncomment these lines back out when we have a slope file that matches the coordinate system of the FCID raster
   # slope_raster <- raster(user_inputs[variable=='slope_filepath',value])
   # names(slope_raster) <- "cell_slope"
   ### 
   
-  # If the user inputs specify a study area mask file, load the shapefile and mask the raster to the shape file.
+  # If the user inputs specify a study area mask file, load the shapefile, crop the original raster to the shapefile extents, and mask the raster to the shape file.
   if(!is.na(user_inputs[variable=='study_area_mask_file',value])) {
     study_area_mask <- readOGR(user_inputs[variable=='study_area_mask_file',value])
-    full_CA_raster <- mask(full_CA_raster,study_area_mask)
+    study_area_raster <- crop(study_area_raster,extent(study_area_mask))
+    study_area_raster <- mask(study_area_raster,study_area_mask)
 ### Uncomment these lines back out when we have a slope file in WGS
     # slope_raster <- mask(slope_raster,study_area_mask)
 ###    
@@ -90,11 +91,13 @@ if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   # look if we can stack FCID and slope rasters to see if we can load them at the same time.
   ##########################################################################################
     ##########################################################################################
-  full_CA_df <- as.data.frame(full_CA_raster,xy=TRUE)
-
-    # The full raster dataset is a square, so it will include non-forested areas within California, a chunk of the Pacifc Ocean,
+  study_area_df <- as.data.frame(study_area_raster,xy=TRUE)
+  
+  names(study_area_df) <- c('x','y','FCID_code')
+  
+  # The full raster dataset is a square, so it will include non-forested areas within California, a chunk of the Pacifc Ocean,
   # and a fair bit of Nevada. These locations will have an FCID value of NA; trim it out using subset()
-  full_CA_df <- subset(full_CA_df,!is.na(FCID_WGS))
+  study_area_df <- subset(study_area_df,!is.na(FCID_code))
   
   ### Uncomment these lines back out when we have a slope file that matches the coordinate system of the FCID raster 
   # Repeat with slope
@@ -106,16 +109,16 @@ if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   ###
   
   # Convert to a data table, and delete the data frame
-  full_CA_FCID <- data.table(full_CA_df)
-  full_CA_df <- NULL
-  setkey(full_CA_FCID,x,y)
+  study_area_FCID <- data.table(study_area_df)
+  study_area_df <- NULL
+  setkey(study_area_FCID,x,y)
   
   ############
   # When we have a slope file projected in the same coordinate system of the FCID raster, we can remove this. and uncomment some of the other lines. Until then, let's
-  # make a fake data set from full_CA_FCID. 
-  slope_dt <- copy(full_CA_FCID)
-  slope_dt[,cell_slope:=FCID_WGS/1e9]
-  slope_dt[,FCID_WGS:=NULL]
+  # make a fake data set from study_area_FCID. 
+  slope_dt <- copy(study_area_FCID)
+  slope_dt[,cell_slope:=FCID_code/1e9]
+  slope_dt[,FCID_code:=NULL]
   setkey(slope_dt,x,y)
   # REMEMBER TO DELETE THIS AFTER WE HAVE MATCHING SLOPE AND FCID RASTER
   ############
@@ -128,24 +131,24 @@ if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   ###
   
   # Combine the slope with the FCID data tables - THIS MAY NOT BE NECESSARY IF WE CAN LOAD AS STACKS.
-  full_CA_FCID <- full_CA_FCID[slope_dt]
+  study_area_FCID <- study_area_FCID[slope_dt]
   # THERE MAY BE SOME ADJUSTMENTS NEEDED ONCE WE USE A REAL SLOPE RASTER
   
   # Delete the slope data table to save on memory
   slope_dt <- NULL
   
-  # Read in the residue load values from a csv file. These values are indexed by FCID_WGS, so that is how we will join the 2 tables
+  # Read in the residue load values from a csv file. These values are indexed by FCID_code, so that is how we will join the 2 tables
   fcid_table <- data.table(read.csv(user_inputs[variable=='residue_treatment_filepath',value]))
   setkey(fcid_table,FCID2018)
-  setkey(full_CA_FCID,FCID_WGS)
-  full_CA_FCID <- full_CA_FCID[fcid_table[Treatment==user_inputs[variable=='treatment_type',value]]]
-  setkey(full_CA_FCID,x,y)
+  setkey(study_area_FCID,FCID_code)
+  study_area_FCID <- study_area_FCID[fcid_table[Treatment==user_inputs[variable=='treatment_type',value]]]
+  setkey(study_area_FCID,x,y)
   
   # There will be some overlap for FCID values that don't appear in the data set. They will have non-existant x & y values. Trim them.
-  full_CA_FCID <- full_CA_FCID[!is.na(x)]
+  study_area_FCID <- study_area_FCID[!is.na(x)]
   
   # Eliminate the treatment and FCID columns, we do not need them.
-  full_CA_FCID[,':='(FCID_WGS=NULL,Treatment=NULL)]
+  study_area_FCID[,':='(FCID_code=NULL,Treatment=NULL)]
   
   # We have a full table of WGS coordinates and FCID values. Decay and fire values will be pre-run in tile format, so we will need to load
   # the tiles up into the main WGS table.
@@ -158,13 +161,6 @@ if(user_inputs[variable=='ag_or_forest',value]=='agricultural') {
 ```
 
 We now have a spatially-indexed data table with residue loading information and cell slope values. Now we figure out what the technically recoverable residue is.
-
-# DEVELOPMENT UPDATE:
-full_CA_FCID is too big to run in its entirety (issue of RAM). For development (and possibly for other runs), we need to break it into smaller data sets.
-```{r}
-# For development
-full_CA_FCID <- full_CA_FCID[1:10000000,]
-```
 
 ```{r}
 # The harvest system and type will vary by slope; read in the harvest system file to get the slope criteria
@@ -183,16 +179,16 @@ harvest_system_criteria <- harvest_system_criteria[min_slope>=0&max_slope>=0,]
 #######################################################################################################################################################
 
 # Apply the appropriate harvest system based on cell slope
-full_CA_FCID[,harvest_system := harvest_system_criteria[min_slope==min(min_slope),harvest_system]]
+study_area_FCID[,harvest_system := harvest_system_criteria[min_slope==min(min_slope),harvest_system]]
 
 for(row.i in nrow(harvest_system_criteria[min_slope!=min(min_slope)])) {
-  full_CA_FCID[cell_slope >= harvest_system_criteria[row.i,min_slope] & cell_slope < harvest_system_criteria[row.i,max_slope],harvest_system := harvest_system_criteria[row.i,harvest_system]]
+  study_area_FCID[cell_slope >= harvest_system_criteria[row.i,min_slope] & cell_slope < harvest_system_criteria[row.i,max_slope],harvest_system := harvest_system_criteria[row.i,harvest_system]]
 }
 
 # The technically available residues will be based on silvicultural treatment, harvest system/type (currently the harvest_system column),
 # burn type, biomass collection, and pulp market. Within a scenario, treatment, burn type, biomass collection, and pulp market are decided 
-# across the entire study area. Harvest system will vary based on slope. Rather than create an ID for full_CA_FCID and merging with the complete scenario martix,
-# create a smaller scenario matrix filtered through the user inputs, and merge with full_CA_FCID based upon harvest_system.
+# across the entire study area. Harvest system will vary based on slope. Rather than create an ID for study_area_FCID and merging with the complete scenario martix,
+# create a smaller scenario matrix filtered through the user inputs, and merge with study_area_FCID based upon harvest_system.
 complete_scenario_matrix <- data.table(read.csv(user_inputs[variable=='scenario_matrix_file',value]))
 
 # Trim to the treatment, burn type, biomass collection, and pulp market
@@ -206,12 +202,12 @@ scenario_matrix <- copy(complete_scenario_matrix[Silvicultural.Treatment==user_i
 # Combine stem and bark residues.
 ########################################
 
-# Merge senario matrix with full_CA_FCID
+# Merge senario matrix with study_area_FCID
 scenario_matrix[,merge_column := paste(Harvest.System,Harvest.Type,sep='-')]
 scenario_matrix[,':='(Silvicultural.Treatment=NULL, Harvest.System=NULL, Harvest.Type=NULL, Burn.Type=NULL, Biomass.Collection=NULL, Pulp.Market=NULL)]
 setkey(scenario_matrix,merge_column)
-setkey(full_CA_FCID,harvest_system)
-full_CA_FCID <- scenario_matrix[full_CA_FCID]
+setkey(study_area_FCID,harvest_system)
+study_area_FCID <- scenario_matrix[study_area_FCID]
 
 
 ########################################
@@ -220,7 +216,7 @@ full_CA_FCID <- scenario_matrix[full_CA_FCID]
 ########################################
 
 # Combine the technically available fractions with the gross resource base.
-full_CA_FCID[,':='(Recovered_Stem9Plus_tonsAcre = Recovered_Stem9Plus * Stem9Plus_tonsAcre,
+study_area_FCID[,':='(Recovered_Stem9Plus_tonsAcre = Recovered_Stem9Plus * Stem9Plus_tonsAcre,
                    Recovered_Stem6to9_tonsAcre = Recovered_Stem6to9 * Stem6to9_tonsAcre,
                    Recovered_Stem4to6_tonsAcre = Recovered_Stem4to6 * Stem4to6_tonsAcre,
                    Recovered_Bark9Plus_tonsAcre = Recovered_Bark9Plus * Bark9Plus_tonsAcre,
@@ -263,7 +259,7 @@ full_CA_FCID[,':='(Recovered_Stem9Plus_tonsAcre = Recovered_Stem9Plus * Stem9Plu
 )]
 
 # Trim out the columns we no longer need
-full_CA_FCID[,':='(Recovered_Stem9Plus = NULL, Stem9Plus_tonsAcre = NULL, Recovered_Stem6to9 = NULL, Stem6to9_tonsAcre = NULL, Recovered_Stem4to6 = NULL,
+study_area_FCID[,':='(Recovered_Stem9Plus = NULL, Stem9Plus_tonsAcre = NULL, Recovered_Stem6to9 = NULL, Stem6to9_tonsAcre = NULL, Recovered_Stem4to6 = NULL,
                    Stem4to6_tonsAcre = NULL, Recovered_Bark9Plus = NULL, Bark9Plus_tonsAcre = NULL, Recovered_Bark6to9 = NULL, Bark6to9_tonsAcre = NULL,
                    Recovered_Bark4to6 = NULL, Bark4to6_tonsAcre = NULL, Recovered_Branch = NULL, Branch_tonsAcre = NULL, Recovered_Foliage = NULL,
                    Foliage_tonsAcre = NULL, Merchantable_Stem9Plus = NULL, Merchantable_Stem6to9 = NULL, Merchantable_Stem4to6 = NULL,  Merchantable_Bark9Plus = NULL,
@@ -281,11 +277,58 @@ full_CA_FCID[,':='(Recovered_Stem9Plus = NULL, Stem9Plus_tonsAcre = NULL, Recove
 
 Load the decay rate rasters
 ```{r}
+# There are currently 3 decay rasters: one for CWD, FWD, and foliage. From our notes, there should be six rates (for piled and scattered), not just 3.
+# Figure out if this is an issue.
+CWD_decay_raster <- raster(user_inputs[variable=='CWD_decay_filepath',value])
+FWD_decay_raster <- raster(user_inputs[variable=='FWD_decay_filepath',value])
+foliage_decay_raster <- raster(user_inputs[variable=='foliage_decay_filepath',value])
+
+# If the user inputs specify a study area mask file, we will have a shapefile loaded from earlier. Use the same shape file to crop and mask our rasters.
+if(!is.na(user_inputs[variable=='study_area_mask_file',value])) {
+  # CWD raster
+  CWD_decay_raster <- crop(CWD_decay_raster,extent(study_area_mask))
+  CWD_decay_raster <- mask(CWD_decay_raster,study_area_mask)
+  
+  # FWD raster  
+  FWD_decay_raster <- crop(FWD_decay_raster,extent(study_area_mask))
+  FWD_decay_raster <- mask(FWD_decay_raster,study_area_mask)
+  
+  # foliage raster
+  foliage_decay_raster <- crop(foliage_decay_raster,extent(study_area_mask))
+  foliage_decay_raster <- mask(foliage_decay_raster,study_area_mask)
+}
+
+# Now that the decay rasters are loaded and masked, convert them to data frames and then data tables
+
+# From above
+CWD_decay_df <- as.data.frame(CWD_decay_raster,xy=TRUE)
+CWD_decay_rates <- data.table(CWD_decay_df)
+CWD_decay_df <- NULL
+setkey(CWD_decay_rates,x,y)
+
+FWD_decay_df <- as.data.frame(FWD_decay_raster,xy=TRUE)
+FWD_decay_rates <- data.table(FWD_decay_df)
+FWD_decay_df <- NULL
+setkey(FWD_decay_rates,x,y)
+
+foliage_decay_df <- as.data.frame(foliage_decay_raster,xy=TRUE)
+foliage_decay_rates <- data.table(foliage_decay_df)
+foliage_decay_df <- NULL
+setkey(foliage_decay_rates,x,y)
 
 
+# Join decay data tables with the study area FCID, and then clear the data tables
+setkey(study_area_FCID,x,y)
+setkey(CWD_decay_rates,x,y)
+setkey(FWD_decay_rates,x,y)
+setkey(foliage_decay_rates,x,y)
+
+study_area_FCID <- CWD_decay_rates[FWD_decay_rates[foliage_decay_rates[study_area_FCID]]]
+
+CWD_decay_rates <- NULL
+FWD_decay_rates <- NULL
+foliage_decay_rates <- NULL
 ```
-
-
 
 Calculating the Reference Case Emissions
 ```{r}
