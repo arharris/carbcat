@@ -5,15 +5,16 @@ Source relevant module and function files.
 ```{r}
 #source("class_LocationData.R")
 source("class_ModuleOutput.R")
-source("harvest-processing.R")
-
+# source("harvest-processing.R")
+source("prescribed-burned-functions.R")
+source("decay-functions.R")
+source('wildfire-functions.R')
+source("misc-functions.R")
 ```
 
 Load needed library functions
 ```{r}
-library(data.table)
-library(raster)
-library(rgdal)
+load.libraries(c("data.table","raster","rgdal","rgeos","beepr")) # beepr isfor testing
 
 ```
 
@@ -69,19 +70,16 @@ For agricultural data:
 ```{r}
 if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   study_area_raster <- raster(user_inputs[variable=='fcid_code_filepath',value])
-### Uncomment these lines back out when we have a slope file that matches the coordinate system of the FCID raster
-  # slope_raster <- raster(user_inputs[variable=='slope_filepath',value])
-  # names(slope_raster) <- "cell_slope"
-  ### 
-  
+  slope_raster <- raster(user_inputs[variable=='slope_filepath',value])
+  names(slope_raster) <- "cell_slope"
+
   # If the user inputs specify a study area mask file, load the shapefile, crop the original raster to the shapefile extents, and mask the raster to the shape file.
   if(!is.na(user_inputs[variable=='study_area_mask_file',value])) {
     study_area_mask <- readOGR(user_inputs[variable=='study_area_mask_file',value])
     study_area_raster <- crop(study_area_raster,extent(study_area_mask))
     study_area_raster <- mask(study_area_raster,study_area_mask)
-### Uncomment these lines back out when we have a slope file in WGS
-    # slope_raster <- mask(slope_raster,study_area_mask)
-###    
+    slope_raster <- crop(slope_raster,extent(study_area_mask))
+    slope_raster <- mask(slope_raster,study_area_mask)
   }
   
   # convert raster objects to data frames. This may crash things.
@@ -99,41 +97,23 @@ if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   # and a fair bit of Nevada. These locations will have an FCID value of NA; trim it out using subset()
   study_area_df <- subset(study_area_df,!is.na(FCID_code))
   
-  ### Uncomment these lines back out when we have a slope file that matches the coordinate system of the FCID raster 
   # Repeat with slope
-  # slope_df <- as.data.frame(slope_raster,xy=TRUE)
-  
-  # The full raster dataset is a square, so it will include non-forested areas within California, a chunk of the Pacifc Ocean,
-  # and a fair bit of Nevada. These locations will have an FCID value of NA; trim it out using subset()
-  # slope_df <- subset(slope_df,!is.na(cell_slope))
-  ###
+  slope_df <- as.data.frame(slope_raster,xy=TRUE)
+  slope_df <- subset(slope_df,!is.na(cell_slope))
   
   # Convert to a data table, and delete the data frame
   study_area_FCID <- data.table(study_area_df)
   study_area_df <- NULL
   setkey(study_area_FCID,x,y)
   
-  ############
-  # When we have a slope file projected in the same coordinate system of the FCID raster, we can remove this. and uncomment some of the other lines. Until then, let's
-  # make a fake data set from study_area_FCID. 
-  slope_dt <- copy(study_area_FCID)
-  slope_dt[,cell_slope:=FCID_code/1e9]
-  slope_dt[,FCID_code:=NULL]
-  setkey(slope_dt,x,y)
-  # REMEMBER TO DELETE THIS AFTER WE HAVE MATCHING SLOPE AND FCID RASTER
-  ############
-  
-  ### Uncomment these lines back out when we have a slope file that matches the coordinate system of the FCID raster 
   # Repeat with slope
-  # slope_dt <- data.table(slope_df)
-  # slope_df <- NULL
-  # setkey(slope_dt,x,y)
-  ###
-  
+  slope_dt <- data.table(slope_df)
+  slope_df <- NULL
+  setkey(slope_dt,x,y)
+
   # Combine the slope with the FCID data tables - THIS MAY NOT BE NECESSARY IF WE CAN LOAD AS STACKS.
-  study_area_FCID <- study_area_FCID[slope_dt]
-  # THERE MAY BE SOME ADJUSTMENTS NEEDED ONCE WE USE A REAL SLOPE RASTER
-  
+  study_area_FCID <- slope_dt[study_area_FCID]
+
   # Delete the slope data table to save on memory
   slope_dt <- NULL
   
@@ -147,17 +127,22 @@ if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   # There will be some overlap for FCID values that don't appear in the data set. They will have non-existant x & y values. Trim them.
   study_area_FCID <- study_area_FCID[!is.na(x)]
   
+  # Round the x and y values to the first decimal, otherwise rounding errors are going to muck with joins with the decay rates.
+  study_area_FCID[,':='(x=round(x,digits=1),y=round(y,digits=1))]
+  
   # Eliminate the treatment and FCID columns, we do not need them.
   study_area_FCID[,':='(FCID_code=NULL,Treatment=NULL)]
   
-  # We have a full table of WGS coordinates and FCID values. Decay and fire values will be pre-run in tile format, so we will need to load
-  # the tiles up into the main WGS table.
+  # We have a full table of WGS coordinates and FCID values. 
+  
+  # Fire values will be pre-run in tile format, so we will need to load the tiles up into the main WGS table.
 }
 
 if(user_inputs[variable=='ag_or_forest',value]=='agricultural') {
   print('This code has yet to be written')
 }
 
+beep(6)
 ```
 
 We now have a spatially-indexed data table with residue loading information and cell slope values. Now we figure out what the technically recoverable residue is.
@@ -179,9 +164,9 @@ harvest_system_criteria <- harvest_system_criteria[min_slope>=0&max_slope>=0,]
 #######################################################################################################################################################
 
 # Apply the appropriate harvest system based on cell slope
-study_area_FCID[,harvest_system := harvest_system_criteria[min_slope==min(min_slope),harvest_system]]
+study_area_FCID[,harvest_system := harvest_system_criteria[1,harvest_system]]
 
-for(row.i in nrow(harvest_system_criteria[min_slope!=min(min_slope)])) {
+for(row.i in 2:nrow(harvest_system_criteria)) {
   study_area_FCID[cell_slope >= harvest_system_criteria[row.i,min_slope] & cell_slope < harvest_system_criteria[row.i,max_slope],harvest_system := harvest_system_criteria[row.i,harvest_system]]
 }
 
@@ -299,23 +284,23 @@ if(!is.na(user_inputs[variable=='study_area_mask_file',value])) {
 }
 
 # Now that the decay rasters are loaded and masked, convert them to data frames and then data tables
-
-# From above
 CWD_decay_df <- as.data.frame(CWD_decay_raster,xy=TRUE)
 CWD_decay_rates <- data.table(CWD_decay_df)
 CWD_decay_df <- NULL
 setkey(CWD_decay_rates,x,y)
+CWD_decay_rates[,':='(x=round(x,digits=1),y=round(y,digits=1))]
 
 FWD_decay_df <- as.data.frame(FWD_decay_raster,xy=TRUE)
 FWD_decay_rates <- data.table(FWD_decay_df)
 FWD_decay_df <- NULL
 setkey(FWD_decay_rates,x,y)
+FWD_decay_rates[,':='(x=round(x,digits=1),y=round(y,digits=1))]
 
 foliage_decay_df <- as.data.frame(foliage_decay_raster,xy=TRUE)
 foliage_decay_rates <- data.table(foliage_decay_df)
 foliage_decay_df <- NULL
 setkey(foliage_decay_rates,x,y)
-
+foliage_decay_rates[,':='(x=round(x,digits=1),y=round(y,digits=1))]
 
 # Join decay data tables with the study area FCID, and then clear the data tables
 setkey(study_area_FCID,x,y)
@@ -325,46 +310,200 @@ setkey(foliage_decay_rates,x,y)
 
 study_area_FCID <- CWD_decay_rates[FWD_decay_rates[foliage_decay_rates[study_area_FCID]]]
 
+# There may be a couple more NA points, with no reource available and no decay rate assigned. Clear it out.
+study_area_FCID <- study_area_FCID[!is.na(CWD_cm)&!is.na(FWD_cm)&!is.na(Foliage_cm),]
+
 CWD_decay_rates <- NULL
 FWD_decay_rates <- NULL
 foliage_decay_rates <- NULL
-```
 
-Calculating the Reference Case Emissions
+# Last step: for decay, we will actually need 6 decay rates: the 3 for scattered decay (CWD, FWD, foliage), and decay rates for the same material classes
+# in piles. The piled rates are just the other rates multiplied by a scalar factor; this we can hard code:
+piled_K_coeff <- 0.7516606 # 0.721265744184168; changed March 2019 to reflect proportion of ground contact within pile.
+
+beep(4)
+```
+Add wildfire data and emissions factors. These are stored in .rds files by tile; there are over 13,000 tiles. We need to load the tile data that overlaps with
+our study area, then the data needs to be cropped to match our study area exactly.
+
+*NOTE* The fill wildfire data has not been processed yet, so to test out this operation, I am probably going to need to make some dummy data.
+
 ```{r}
-# The user input variable "burn_type" will specify the nature of the reference case: a value of "Pile Burn," "Broadcast Burn," or "Jackpot Burn" will be intentionally burned and then follow decay/wildfire, "None" will just follow decay/wildfire.
+# Load up the full tile shape file
+full_tile_set <- readOGR(user_inputs[variable=="tile_shape_file",value])
+study_area_tiles <- intersect(study_area_mask,full_tile_set)
 
+# To get the tile IDs, convert study_area_tiles into a data frame and extract the ID column
+tile_list <- as.data.frame(study_area_tiles)$ID
 
+wildfire_data <- data.table()
 
+# Cycle through tile_list, load the .rds files, and combine into a single data table.
+for (tile in tile_list) {
+  new_tile <- readRDS(paste(user_inputs[variable=="wildfire_data_directory",value],tile,".rds",sep=""))
+  tile_data <- data.table(as.data.frame(new_tile,xy=TRUE))
+  setkey(tile_data,x,y)
+  wildfire_data <- rbind(wildfire_data,tile_data)
+  tile_data <- NULL
+}
+
+# Round the x and y values to the first decimal, otherwise rounding errors are going to muck with joins.
+wildfire_data[,':='(x=round(x,digits=1),y=round(y,digits=1))]
+setkey(wildfire_data,x,y)
+
+##############################################################################################################
+##############################################################################################################
+# BECAUSE WE ARE USING DUMMY DATA, WE NEED TO RENAME AND CREATE SOME MORE REALISTIC DUMMY DATA.
+##############################################################################################################
+##############################################################################################################
+setnames(wildfire_data,"UW_FCID_no_wild","MassExposedToWildfire")
+wildfire_data[,':='(MassExposedToWildfire = MassExposedToWildfire / 1e10,
+                    CWD_CombustionFrac = runif(nrow(wildfire_data)),
+                    FWD_CombustionFrac = runif(nrow(wildfire_data)),
+                    Foliage_CombustionFrac = runif(nrow(wildfire_data))
+                    )]
+
+wildfire_data[,':='(CWD_CharFrac = (2/3) * (1 - CWD_CombustionFrac),
+                    FWD_CharFrac = (2/3) * (1 - FWD_CombustionFrac),
+                    Foliage_CharFrac = (2/3) * (1 - Foliage_CombustionFrac)
+                    )]
+
+wildfire_data[,':='(CWD_UnburendFrac = 1 - CWD_CombustionFrac - CWD_CharFrac,
+                    FWD_UnburendFrac = 1 - FWD_CombustionFrac - FWD_CharFrac,
+                    Foliage_UnburendFrac = 1 - Foliage_CombustionFrac - Foliage_CharFrac
+                    )]
+
+# Merge the wildfire data with study_area_FCID
+study_area_FCID <- wildfire_data[study_area_FCID]
 ```
 
 
-The use cases are going to need a variable to identify the specific use case: collect from landing only, collect from landing and broadcast burn, and collect residues from landing and field.
+Calculating the Prescribed Burn/Decay/Wildfire Emissions
+```{r}
+##########################################################################################################################################################
+# PRESCRIBED BURN HAPPENS BEFORE DECAY.
+# MASS IS REMOVED FROM PILED CATEGORIES DIRECTLY, exposed but unburned mass remains in the original column for exposure to wildfire/decay 
+##########################################################################################################################################################
 
+# The user input variable "burn_type" will specify the nature of the scenario: a value of "Pile Burn," "Broadcast Burn," or "Jackpot Burn" will be intentionally burned and then follow decay/wildfire, "None" will just follow decay/wildfire.
+
+# We will need to build out the code to perform a burn if we need to first, but for now let's build out the decay equations. I feel that will be the hard part.
+
+# Step 1: combine all mass categories into CWD, FWD, and foliage. There will also be a duff column, though this will start empty. 
+# There will be several categories with different decay rates - recovered, scattered (including merchantable breakage), field piled, and landing piled
+study_area_FCID[,':='(Recovered_CWD_tonsAcre = Recovered_Stem9Plus_tonsAcre + Recovered_Stem6to9_tonsAcre + Recovered_Stem4to6_tonsAcre + Recovered_Bark9Plus_tonsAcre + Recovered_Bark6to9_tonsAcre + Recovered_Bark4to6_tonsAcre,
+                      Scattered_CWD_tonsAcre = Merchantable_Stem9Plus_tonsAcre + Merchantable_Stem6to9_tonsAcre + Merchantable_Stem4to6_tonsAcre + Merchantable_Bark9Plus_tonsAcre + Merchantable_Bark6to9_tonsAcre + Merchantable_Bark4to6_tonsAcre + Scattered_Stem9Plus_tonsAcre + Scattered_Stem6to9_tonsAcre + Scattered_Stem4to6_tonsAcre + Scattered_Bark9Plus_tonsAcre + Scattered_Bark6to9_tonsAcre + Scattered_Bark4to6_tonsAcre,
+                      LandingPiled_CWD_tonsAcre = 
+LandingPiled_Stem9Plus_tonsAcre + LandingPiled_Stem6to9_tonsAcre + LandingPiled_Stem4to6_tonsAcre + LandingPiled_Bark9Plus_tonsAcre + LandingPiled_Bark6to9_tonsAcre + LandingPiled_Bark4to6_tonsAcre,
+                      FieldPiled_CWD_tonsAcre = FieldPiled_Stem9Plus_tonsAcre + FieldPiled_Stem6to9_tonsAcre + FieldPiled_Stem4to6_tonsAcre + FieldPiled_Bark9Plus_tonsAcre + FieldPiled_Bark6to9_tonsAcre + FieldPiled_Bark4to6_tonsAcre + FieldPiled_Branch_tonsAcre + FieldPiled_Foliage_tonsAcre
+)]
+
+# Clear out old columns, as well as merchantable branch/foliage (which should've been empty anyway)
+study_area_FCID[,':='(Recovered_Stem9Plus_tonsAcre = NULL, Recovered_Stem6to9_tonsAcre = NULL, Recovered_Stem4to6_tonsAcre = NULL, Recovered_Bark9Plus_tonsAcre = NULL, Recovered_Bark6to9_tonsAcre = NULL, 
+                      Recovered_Bark4to6_tonsAcre = NULL, Merchantable_Stem9Plus_tonsAcre = NULL, Merchantable_Stem6to9_tonsAcre = NULL, Merchantable_Stem4to6_tonsAcre = NULL, Merchantable_Bark9Plus_tonsAcre = NULL,
+                      Merchantable_Bark6to9_tonsAcre = NULL, Merchantable_Bark4to6_tonsAcre = NULL, Merchantable_Branch_tonsAcre=NULL, Merchantable_Foliage_tonsAcre = NULL, Scattered_Stem9Plus_tonsAcre = NULL,
+                      Scattered_Stem6to9_tonsAcre = NULL, Scattered_Stem4to6_tonsAcre = NULL, Scattered_Bark9Plus_tonsAcre = NULL, Scattered_Bark6to9_tonsAcre = NULL, Scattered_Bark4to6_tonsAcre = NULL,
+                      LandingPiled_Stem9Plus_tonsAcre = NULL, LandingPiled_Stem6to9_tonsAcre = NULL, LandingPiled_Stem4to6_tonsAcre = NULL, LandingPiled_Bark9Plus_tonsAcre = NULL, LandingPiled_Bark6to9_tonsAcre = NULL,
+                      LandingPiled_Bark4to6_tonsAcre = NULL, FieldPiled_Stem9Plus_tonsAcre = NULL,FieldPiled_Stem6to9_tonsAcre = NULL, FieldPiled_Stem4to6_tonsAcre = NULL, FieldPiled_Bark9Plus_tonsAcre = NULL,
+                      FieldPiled_Bark6to9_tonsAcre = NULL, FieldPiled_Bark4to6_tonsAcre = NULL
+)]
+
+# FWD consists of branches, and foliage is obviously foliage. Just rename the columns.
+setnames(study_area_FCID,
+         c("Recovered_Branch_tonsAcre","LandingPiled_Branch_tonsAcre","FieldPiled_Branch_tonsAcre","Scattered_Branch_tonsAcre"),
+         c("Recovered_FWD_tonsAcre","LandingPiled_FWD_tonsAcre","FieldPiled_FWD_tonsAcre","Scattered_FWD_tonsAcre"))
+
+# Copy the residue columns for LandingPiled, FieldPiled, and Scattered residues. These will be the initial mass residues in Year 1. We will also need some blank columns to track material exposed to fire but left unburned.
+study_area_FCID[,':='(LandingPiled_CWD_tonsAcre_INITIAL = LandingPiled_CWD_tonsAcre,
+                      LandingPiled_FWD_tonsAcre_INITIAL = LandingPiled_FWD_tonsAcre,
+                      LandingPiled_Foliage_tonsAcre_INITIAL = LandingPiled_Foliage_tonsAcre,
+                      FieldPiled_CWD_tonsAcre_INITIAL = FieldPiled_CWD_tonsAcre,
+                      FieldPiled_FWD_tonsAcre_INITIAL = FieldPiled_FWD_tonsAcre,
+                      FieldPiled_Foliage_tonsAcre_INITIAL = FieldPiled_Foliage_tonsAcre,
+                      Scattered_CWD_tonsAcre_INITIAL = Scattered_CWD_tonsAcre,
+                      Scattered_FWD_tonsAcre_INITIAL = Scattered_FWD_tonsAcre,
+                      Scattered_Foliage_tonsAcre_INITIAL = Scattered_Foliage_tonsAcre
+                      )]
+
+# Make columns for duff, mass previously exposed to fire but unburnt, and year.i columns. If space becomes an issue, we can create/delete year.i column in the decay function, but I;m guessing that will hit our speed.
+study_area_FCID[,':='(Duff_tonsAcre=0, decay_CWD_mass_year_i=0, decay_FWD_mass_year_i=0, decay_Foliage_mass_year_i=0,
+                      fire_exposed_CWD_mass_year_i=0, fire_exposed_FWD_mass_year_i=0, fire_exposed_Foliage_mass_year_i=0, fire_exposed_Duff_mass_year_i=0,
+                      prev_fired_CWD_mass=0, prev_fired_FWD_mass=0, prev_fired_Foliage_mass=0, prev_fired_Duff_mass=0)]
+
+# and mass emissions and charred material for years 1:100
+study_area_FCID[,paste("Emissions_year_",seq(1,100),sep=""):=0]
+study_area_FCID[,paste("char_year_",seq(1,100),sep=""):=0]
+
+# Cycle through 100 years of emissions. Each year, we need to:
+# 1) Calculate the mass lost in year i
+# 2) Use the mass lost to atmosphere/duff ratios to calculate the mass lost to duff and atmosphere
+# 3) Update the dynamic residue mass
+# 4) Apply decay to the duff column, add emissions to emissions columns, and update duff mass.
+
+# Repeat for Scattered, LandingPiled, and FieldPiled
+residue.segments <- c("Scattered","FieldPiled","LandingPiled")
+
+# Wildfire emissions will be calculated here alongside decay. We need to change how we track foliage - to - duff conversions; rather than existing mass vs initial (which would include fire loss), track when decay would bring us below the 50% threshold. NOTE TO ANDY: if you get the brilliant idea to track decay loss, this will not work - if (theoretically) 75% of the mass is lost to wildfire before it can decay, the transition to duff would never happen. Base the switch on the expected decay.
+# Also, apply all decay (including duff) before wildfire emissions.
+
+# Output should be a 100 row-X xolumn data table of combined emissions for study area by emissions type (i.e. decay, wildfire, other use....). See output template for more info.
+
+for (residue.segment in residue.segments) {
+  print(residue.segment)
+  for (year.i in 1:100) {
+    print(year.i)
+    
+    # Calculate emissions and mass lost from prescribed burning. This will only happen in year 1, and if the burn_type variable gives a prescribed burn.
+    if(year.i==1 & user_inputs[variable=='burn_type',value] != "None") {
+      # Make sure that the residue segment matches correctly with the prescribed burn method
+      if(residue.segment == "Scattered" & user_inputs[variable=='burn_type',value] == "Broadcast Burn") {
+         study_area_FCID <- prescribed_burn_fun(study_area_FCID, residue.segment, user_inputs[variable=='burn_type',value])
+      }
+      if(residue.segment == "FieldPiled" & user_inputs[variable=='burn_type',value] == "Jackpot Burn") {
+         study_area_FCID <- prescribed_burn_fun(study_area_FCID, residue.segment, user_inputs[variable=='burn_type',value])
+      }
+      if(residue.segment == "LandingPiled" & user_inputs[variable=='burn_type',value] == "Pile Burn") {
+         study_area_FCID <- prescribed_burn_fun(study_area_FCID, residue.segment, user_inputs[variable=='burn_type',value])
+      }
+    }
+    
+    # Calculate the total decayed mass
+    study_area_FCID <- decay_fun(study_area_FCID,residue.segment,year.i)
+    
+    # Address wildfire emissions and mass loss. 
+    ##############################################################################################################
+    ##############################################################################################################
+    # CONFIRM THAT DUFF COMBUSTION RATE IS THE SAME AS THE FOLIAGE COMBUSTION RATE
+    ##############################################################################################################
+    ############################################################################################################## 
+    study_area_FCID <- annual_wildfire_fun(study_area_FCID,residue.segment,year.i)
+    
+  }
+  # I think we need to re-set the duff for the new residue segment so duff does not get double-counted.
+  study_area_FCID[,':='(Duff_tonsAcre = 0, prev_fired_Duff_mass = 0)]
+}
+
+```
+
+Calculating harvest, processing, and use emissions.
 
 
 (The order of module calls will change, right now they are ordered by when I coded them.)
 
 Harvest-Processing
 ```{r}
-harvest.processing.output <- harvest.processing(ag.or.forest, treatment.type, initial.moisture, harvest.collection.year.diff, comminution.opt, post.harvest.processing, scattered.fraction, piled.fraction)
+# harvest.processing.output <- harvest.processing(ag.or.forest, treatment.type, initial.moisture, harvest.collection.year.diff, comminution.opt, post.harvest.processing, scattered.fraction, piled.fraction)
 ```
 
 In-Field Emissions; will almost certainly be different whether it is ag or forestry.
 ```{r}
-if(ag.or.forest=='Agriculture') {
-  print("In-field ag module here")
-} else if (ag.or.forest=='Forestry') {
-  print("In-field forestry module here")
-} else {
-  cat("ag.or.forest give neither ag, nor forestry")
-}
-
-
-
-
-
-
+# if(ag.or.forest=='Agriculture') {
+#   print("In-field ag module here")
+# } else if (ag.or.forest=='Forestry') {
+#   print("In-field forestry module here")
+# } else {
+#   cat("ag.or.forest give neither ag, nor forestry")
+# }
 ```
 
 
