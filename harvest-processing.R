@@ -6,177 +6,759 @@
 # -------------------------------------------------------------------------
 # VERSION:
 #
-#   2018-05-24: Initialized Script
-#   2018-05-30: Version 1 complete; takes specified input and location object,
-#               returns output object.
+#   2019-04-02: Deleted old, unworkable code, developed initialized Script
 #
 # -------------------------------------------------------------------------
 # ACTION ITEMS:
 # Index   Description                                                      Status
 # -----   --------------------------------------------------------------   ------
-# [1]     Develop decay functions for remainder of forestry/ag options     On-hold
-# [2]     "Primary Harvest Species" is depreciated. Update, and account    Waiting
-#         for ag/forestry differences.
+#
 # ---------------------------------
 # INPUTS:
-# ag.or.forest: Value of "Agriculture" or "Forestry"
-# treatment.type:
-# initial.moisture: 
-# harvest.collection.year.diff: Years between residue generation and residue collection;
-#     default value is 0 (residues collected same year they are produced)
-# comminution.opt: Residue comminution method; default value "None"
-# post.harvest.processing: Residue processing method; default value "None"
-# scattered.fraction: The decimal fraction of the matterial TO BE HARVESTED that is 
-#     scattered
-# piled.fraction: The decimal fraction of the matterial TO BE HARVESTED that is 
-#     piled
 #
 # ---------------------------------
 # OBJECTIVE:
 #
-# This module will calculate carbon emissions for the harvest-processing phase
-# of CARBCAT. (Expand this explanation)
 #
 # ---------------------------------
 # OUTPUTS:
-# 1) A data table covering emissions for years 1-100 (Get more details here)
-# 2) Mass loss through processing/comminution
-# 3) Moisture loss through passive drying
 #
 # =============================================================================
 
 # Source files
-source("misc-functions.R")
-source("class_LocationData.R")
-source("class_ModuleOutput.R")
-source("harvest-equipment-selection-function.R")
-source("decay-functions.R")
-source("moisture-loss-functions.R")
+
 
 # Required Libraries
-load.libraries(c('data.table','zoo'))
+# Calling line: 
+# harvest_processing_fun(study_area_FCID, high_volume_cell_threshold_density)
 
-harvest.processing <- function(ag.or.forest,
-                               treatment.type,
-                               initial.moisture,
-                               harvest.collection.year.diff,
-                               comminution.opt,
-                               post.harvest.processing,
-                               scattered.fraction,
-                               piled.fraction) {
+harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.loss) {
+  # The cell density threshold is applied to the entire study area; if the mean recovered cell density is less than the density threshold, we've got a low volume harvest.
+  mean.study.area.density <- sum(cbrec.dt[,mean(Recovered_CWD_tonsAcre)],cbrec.dt[,mean(Recovered_FWD_tonsAcre)],cbrec.dt[,mean(Recovered_Foliage_tonsAcre)])
+  
+  # If the total residue volume is less than 1000 BDT, we've got a small harvest.
+  total.recovered.residue <- cbrec.dt[,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)]
+  
+  # Initialize harvest processing emissions; this will regurgitate one number to add to year 1 emissions.
+  harvest_processing_emissions <- data.table(CO2_kg=0, CO_kg=0, N2O_kg=0, CH4_kg=0, NOx_kg=0, PMUnder10um_kg=0, PMUnder2.5um_kg=0, SOx_kg=0, VOC_kg=0)
+  
+  # Create a column for recovered residues taht will make it to the power plant. Currently assuming that after comminution, size class is irrelevant.
+  cbrec.dt[,mass_to_plant_tonsAcre:=0]
+  
+  ##########################
+  # Harvest type decision
+  ##########################
+  if(mean.study.area.density>density.threshold & total.recovered.residue > 1000) { ##### HIGH VOLUME HARVEST #####
+    # After the high/low volume determination, options will vary based upon: Harvest type (whole tree or cut-to-length), Slope, Treatment Type, and harvest.comminution.opt
+    # Processing equipment for cut-to-length harvests depend on the treatment type.
+    if(user_inputs[variable=='treatment_type',value]=='RM100') { # 100% thin
+      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1' | Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='G.2' | Equipment_code=='L.1',]
+      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1' | Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='C.1' | Equipment_code=='L.1',]
+      ctl_low_slope_grind <- equipment_emissions[Equipment_code=='T.1' | Equipment_code=='L.3'| Equipment_code=='G.2',]
+      ctl_low_slope_chip <- equipment_emissions[Equipment_code=='T.1' | Equipment_code=='L.3'| Equipment_code=='C.1',]
+    }
+    if(user_inputs[variable=='treatment_type',value]=='TFA20' | user_inputs[variable=='treatment_type',value]=='TFB20' | user_inputs[variable=='treatment_type',value]=='TP20') { # 20% thing
+      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1.20' | Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='G.2' | Equipment_code=='L.1',]
+      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1.20' | Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='C.1' | Equipment_code=='L.1',]
+      ctl_low_slope_grind <- equipment_emissions[Equipment_code=='T.1.20' | Equipment_code=='L.3.20'| Equipment_code=='G.2',]
+      ctl_low_slope_chip <- equipment_emissions[Equipment_code=='T.1.20' | Equipment_code=='L.3.20'| Equipment_code=='C.1',]
+    }
+    if(user_inputs[variable=='treatment_type',value]=='TFA40' | user_inputs[variable=='treatment_type',value]=='TFB40' | user_inputs[variable=='treatment_type',value]=='TP40') { # 20% thing
+      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1.40' | Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='G.2' | Equipment_code=='L.1',]
+      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1.40' | Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='C.1' | Equipment_code=='L.1',]
+      ctl_low_slope_grind <- equipment_emissions[Equipment_code=='T.1.40' | Equipment_code=='L.3.40'| Equipment_code=='G.2',]
+      ctl_low_slope_chip <- equipment_emissions[Equipment_code=='T.1.40' | Equipment_code=='L.3.40'| Equipment_code=='C.1',]
+    }
+    if(user_inputs[variable=='treatment_type',value]=='TFA60' | user_inputs[variable=='treatment_type',value]=='TFB60' | user_inputs[variable=='treatment_type',value]=='TP60') { # 20% thing
+      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1.60' | Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='G.2' | Equipment_code=='L.1',]
+      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1.60' | Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='C.1' | Equipment_code=='L.1',]
+      ctl_low_slope_grind <- equipment_emissions[Equipment_code=='T.1.60' | Equipment_code=='L.3.60'| Equipment_code=='G.2',]
+      ctl_low_slope_chip <- equipment_emissions[Equipment_code=='T.1.60' | Equipment_code=='L.3.60'| Equipment_code=='C.1',]
+    }
+    if(user_inputs[variable=='treatment_type',value]=='TFA80' | user_inputs[variable=='treatment_type',value]=='TFB80' | user_inputs[variable=='treatment_type',value]=='TP80') { # 20% thing
+      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1.80' | Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='G.2' | Equipment_code=='L.1',]
+      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1.80' | Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='C.1' | Equipment_code=='L.1',]
+      ctl_low_slope_grind <- equipment_emissions[Equipment_code=='T.1.80' | Equipment_code=='L.3.80'| Equipment_code=='G.2',]
+      ctl_low_slope_chip <- equipment_emissions[Equipment_code=='T.1.80' | Equipment_code=='L.3.80'| Equipment_code=='C.1',]
+    }
+    
+    # Whole tree harvests do not vary based upon treatment type.
+    wt_high_slope_grind <- equipment_emissions[Equipment_code=='G.2' | Equipment_code=='L.1',]
+    wt_high_slope_chip <- equipment_emissions[Equipment_code=='C.1' | Equipment_code=='L.1',]
+    wt_low_slope_grind <- equipment_emissions[Equipment_code=='G.2',]
+    wt_low_slope_chip <- equipment_emissions[Equipment_code=='C.1',]
+    
+    # Transportation equipment depends on slope and residue moisture
+    if(user_inputs[variable=='residue_moisture',value]=='Dry') {
+      trans_under_10_slope <- equipment_emissions[Equipment_code=='H.5',]
+      trans_10_to_35_slope <- equipment_emissions[Equipment_code=='H.4',]
+      trans_over_35_slope <- equipment_emissions[Equipment_code=='H.10',]
+    } else if(user_inputs[variable=='residue_moisture',value]=='Green') {
+      trans_under_10_slope <- equipment_emissions[Equipment_code=='H.5',]
+      trans_10_to_35_slope <- equipment_emissions[Equipment_code=='H.1',]
+      trans_over_35_slope <- equipment_emissions[Equipment_code=='H.3',]
+    }
+    
+    if(user_inputs[variable=='harvest_comminution_opt',value]=='chip') {
+      ###################################
+      # harvest.comminution.opt decision
+      ###################################
+      # Processing emissions - Chipping
+      harvest_processing_emissions[,':='(
+        CO2_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CO2_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(CO2_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CO2_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(CO2_kg)],
+        
+        CO_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CO_kg)] +
+                cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(CO_kg)] +
+                cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CO_kg)] +
+                cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(CO_kg)], 
+        
+        N2O_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(N2O_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(N2O_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(N2O_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(N2O_kg)], 
+        
+        CH4_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CH4_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(CH4_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CH4_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(CH4_kg)], 
+        
+        NOx_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(NOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(NOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(NOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(NOx_kg)], 
+        
+        PMUnder10um_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(PMUnder10um_kg)] +
+                         cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(PMUnder10um_kg)] +
+                         cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(PMUnder10um_kg)] +
+                         cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(PMUnder10um_kg)], 
+        
+        PMUnder2.5um_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(PMUnder2.5um_kg)] +
+                          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(PMUnder2.5um_kg)] +
+                          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(PMUnder2.5um_kg)] +
+                          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(PMUnder2.5um_kg)],
+        
+        SOx_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(SOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(SOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(SOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(SOx_kg)], 
+        
+        VOC_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(VOC_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(VOC_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(VOC_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(VOC_kg)]
+      )]
+    }
+    # Processing emissions - Grinding
+    if(user_inputs[variable=='harvest_comminution_opt',value]=='grind') {
+      harvest_processing_emissions[,':='(
+        CO2_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO2_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(CO2_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CO2_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(CO2_kg)],
+        
+        CO_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO_kg)] +
+                cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(CO_kg)] +
+                cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CO_kg)] +
+                cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(CO_kg)], 
+        
+        N2O_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(N2O_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(N2O_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(N2O_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(N2O_kg)], 
+        
+        CH4_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CH4_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(CH4_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CH4_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(CH4_kg)], 
+        
+        NOx_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(NOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(NOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(NOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(NOx_kg)], 
+        
+        PMUnder10um_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder10um_kg)] +
+                         cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(PMUnder10um_kg)] +
+                         cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(PMUnder10um_kg)] +
+                         cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(PMUnder10um_kg)], 
+        
+        PMUnder2.5um_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder2.5um_kg)] +
+                          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(PMUnder2.5um_kg)] +
+                          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(PMUnder2.5um_kg)] +
+                          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(PMUnder2.5um_kg)],
+        
+        SOx_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(SOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(SOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(SOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(SOx_kg)], 
+        
+        VOC_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(VOC_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(VOC_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(VOC_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(VOC_kg)]
+      )]
+    }
+    
+    # Processing emissions - Chip & Grind. Chips CWD, grinds the rest.
+    if(user_inputs[variable=='harvest_comminution_opt',value]=='chipandgrind') {
+      harvest_processing_emissions[,':='(
+        CO2_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CO2_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(CO2_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CO2_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(CO2_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO2_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(CO2_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CO2_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(CO2_kg)],
+        
+        CO_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CO_kg)] +
+                cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(CO_kg)] +
+                cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CO_kg)] +
+                cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(CO_kg)] +
+                cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO_kg)] +
+                cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(CO_kg)] +
+                cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CO_kg)] +
+                cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(CO_kg)],
+        
+        N2O_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(N2O_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(N2O_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(N2O_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(N2O_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(N2O_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(N2O_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(N2O_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(N2O_kg)],
+        
+        CH4_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CH4_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(CH4_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CH4_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(CH4_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CH4_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(CH4_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CH4_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(CH4_kg)],
+        
+        NOx_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(NOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(NOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(NOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(NOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(NOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(NOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(NOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(NOx_kg)], 
+        
+        PMUnder10um_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(PMUnder10um_kg)] +
+                         cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(PMUnder10um_kg)] +
+                         cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(PMUnder10um_kg)] +
+                         cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(PMUnder10um_kg)] +
+                         cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder10um_kg)] +
+                         cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(PMUnder10um_kg)] +
+                         cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(PMUnder10um_kg)] +
+                         cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(PMUnder10um_kg)], 
+        
+        PMUnder2.5um_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(PMUnder2.5um_kg)] +
+                          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(PMUnder2.5um_kg)] +
+                          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(PMUnder2.5um_kg)] +
+                          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(PMUnder2.5um_kg)] +
+                          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder2.5um_kg)] +
+                          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(PMUnder2.5um_kg)] +
+                          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(PMUnder2.5um_kg)] +
+                          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(PMUnder2.5um_kg)],
+        
+        SOx_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(SOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(SOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(SOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(SOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(SOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(SOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(SOx_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(SOx_kg)], 
+        
+        VOC_kg = cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(VOC_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(VOC_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(VOC_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(VOC_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(VOC_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(VOC_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(VOC_kg)] +
+                 cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(VOC_kg)]
+      )]
+    }
+      
+    # Transportation Emissions - incorporate distance, as emissions are in tons * km
+    harvest_processing_emissions[,':='(
+      CO2_kg = CO2_kg +
+               cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(CO2_kg)]] +
+               cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(CO2_kg)]] +
+               cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(CO2_kg)]],
+      
+      CO_kg = CO_kg +
+              cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(CO_kg)]] +
+              cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(CO_kg)]] +
+              cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(CO_kg)]], 
+      
+      N2O_kg = N2O_kg +
+               cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(N2O_kg)]] +
+               cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(N2O_kg)]] +
+               cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(N2O_kg)]],
+      
+      CH4_kg = CH4_kg +
+               cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(CH4_kg)]] +
+               cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(CH4_kg)]] +
+               cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(CH4_kg)]],
+      
+      NOx_kg = NOx_kg +
+               cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(NOx_kg)]] +
+               cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(NOx_kg)]] +
+               cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(NOx_kg)]],
+      
+      PMUnder10um_kg = PMUnder10um_kg +
+                       cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(PMUnder10um_kg)]] +
+                       cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(PMUnder10um_kg)]] +
+                       cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(PMUnder10um_kg)]], 
+      
+      PMUnder2.5um_kg = PMUnder2.5um_kg +
+                        cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(PMUnder2.5um_kg)]] +
+                        cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(PMUnder2.5um_kg)]] +
+                        cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(PMUnder2.5um_kg)]],
+      
+      SOx_kg = SOx_kg +
+               cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(SOx_kg)]] +
+               cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(SOx_kg)]] +
+               cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(SOx_kg)]],
+      
+      VOC_kg = VOC_kg +
+               cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(VOC_kg)]] +
+               cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(VOC_kg)]] +
+               cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(VOC_kg)]]
+    )]
+    
+    # Processing mass loss and mass transfer to power plant
+    # In the high volume scenario, the only residues that are NOT processed and NOT sent to the power plant are those with the merge column "Do_Not_Harvest"
+    # Step 1, populate the mass_to_plant_tonsAcre from the recovered columns.
+    cbrec.dt[merge_column!="Do_Not_Harvest",mass_to_plant_tonsAcre := Recovered_CWD_tonsAcre * (1-processing.mass.loss) + Recovered_FWD_tonsAcre * (1-processing.mass.loss) + Recovered_Foliage_tonsAcre * (1-processing.mass.loss)]
+    
+    # Step 2, remove processed materials from the recovered materials. Leftover materials will be exposed to decay and wildfire.
+    cbrec.dt[merge_column!="Do_Not_Harvest",':='(Recovered_CWD_tonsAcre = Recovered_CWD_tonsAcre * processing.mass.loss,
+                                                 Recovered_FWD_tonsAcre = Recovered_FWD_tonsAcre * processing.mass.loss,
+                                                 Recovered_Foliage_tonsAcre = Recovered_Foliage_tonsAcre * processing.mass.loss)]
+      
+  } else { ##### LOW VOLUME HARVEST #####
+    # After the high/low volume determination, options will vary based upon: Harvest type (whole tree or cut-to-length), Slope, Treatment Type, and harvest.comminution.opt
+    # Processing equipment for cut-to-length harvests depend on the treatment type. We need to break out CWD and FWD/Foliage.
+    
+    if(user_inputs[variable=='treatment_type',value]=='RM100') { # 100% thin
+      ctl_CWD_chip <- equipment_emissions[Equipment_code=='SS.1.CTL' | Equipment_code=='T.3' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='C.2',]
+      ctl_CWD_grind <- equipment_emissions[Equipment_code=='SS.1.CTL' | Equipment_code=='T.3' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='G.1',]
+      ctl_FinesFoliage_chip <- equipment_emissions[Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='C.2',]
+      ctl_FinesFoliage_grind <- equipment_emissions[Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='G.1',]
+      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1' | Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='C.2' | Equipment_code=='L.1',]
+      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1' | Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='G.1' | Equipment_code=='L.1',]
+    }
+    if(user_inputs[variable=='treatment_type',value]=='TFA20' | user_inputs[variable=='treatment_type',value]=='TFB20' | user_inputs[variable=='treatment_type',value]=='TP20') { # 20% thing
+      ctl_CWD_chip <- equipment_emissions[Equipment_code=='SS.1.CTL.20' | Equipment_code=='T.3.20' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='C.2',]
+      ctl_CWD_grind <- equipment_emissions[Equipment_code=='SS.1.CTL.20' | Equipment_code=='T.3.20' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='G.1',]
+      ctl_FinesFoliage_chip <- equipment_emissions[Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='C.2',]
+      ctl_FinesFoliage_grind <- equipment_emissions[Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='G.1',]
+      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1.20' | Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='C.2' | Equipment_code=='L.1',]
+      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1.20' | Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='G.1' | Equipment_code=='L.1',]
+    }
+    if(user_inputs[variable=='treatment_type',value]=='TFA40' | user_inputs[variable=='treatment_type',value]=='TFB40' | user_inputs[variable=='treatment_type',value]=='TP40') { # 20% thing
+      ctl_CWD_chip <- equipment_emissions[Equipment_code=='SS.1.CTL.40' | Equipment_code=='T.3.40' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='C.2',]
+      ctl_CWD_grind <- equipment_emissions[Equipment_code=='SS.1.CTL.40' | Equipment_code=='T.3.40' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='G.1',]
+      ctl_FinesFoliage_chip <- equipment_emissions[Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='C.2',]
+      ctl_FinesFoliage_grind <- equipment_emissions[Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='G.1',]
+      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1.40' | Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='C.2' | Equipment_code=='L.1',]
+      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1.40' | Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='G.1' | Equipment_code=='L.1',]
+    }
+    if(user_inputs[variable=='treatment_type',value]=='TFA60' | user_inputs[variable=='treatment_type',value]=='TFB60' | user_inputs[variable=='treatment_type',value]=='TP60') { # 20% thing
+      ctl_CWD_chip <- equipment_emissions[Equipment_code=='SS.1.CTL.60' | Equipment_code=='T.3.60' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='C.2',]
+      ctl_CWD_grind <- equipment_emissions[Equipment_code=='SS.1.CTL.60' | Equipment_code=='T.3.60' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='G.1',]
+      ctl_FinesFoliage_chip <- equipment_emissions[Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='C.2',]
+      ctl_FinesFoliage_grind <- equipment_emissions[Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='G.1',]
+      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1.60' | Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='C.2' | Equipment_code=='L.1',]
+      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1.60' | Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='G.1' | Equipment_code=='L.1',]
+    }
+    if(user_inputs[variable=='treatment_type',value]=='TFA80' | user_inputs[variable=='treatment_type',value]=='TFB80' | user_inputs[variable=='treatment_type',value]=='TP80') { # 20% thing
+      ctl_CWD_chip <- equipment_emissions[Equipment_code=='SS.1.CTL.80' | Equipment_code=='T.3.80' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='C.2',]
+      ctl_CWD_grind <- equipment_emissions[Equipment_code=='SS.1.CTL.80' | Equipment_code=='T.3.80' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='G.1',]
+      ctl_FinesFoliage_chip <- equipment_emissions[Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='C.2',]
+      ctl_FinesFoliage_grind <- equipment_emissions[Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='G.1',]
+      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1.80' | Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='C.2' | Equipment_code=='L.1',]
+      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1.80' | Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='G.1' | Equipment_code=='L.1',]
+    }
+    
+    # Whole tree harvests do not vary based upon treatment type.
+    wt_CWD_chip <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='C.2',]
+    wt_CWD_grind <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='G.1',]
+    wt_FinesFoliage_chip <- equipment_emissions[Equipment_code=='C.2',]
+    wt_FinesFoliage_grind <- equipment_emissions[Equipment_code=='G.1',]
+    wt_high_slope_chip <- equipment_emissions[Equipment_code=='C.2' | Equipment_code=='L.1',]
+    wt_high_slope_grind <- equipment_emissions[Equipment_code=='G.1' | Equipment_code=='L.1',]
+    
+    if(user_inputs[variable=='residue_moisture',value]=='Dry') {
+      trans_under_10_slope <- equipment_emissions[Equipment_code=='H.5',]
+      trans_10_to_35_slope <- equipment_emissions[Equipment_code=='H.4',]
+      trans_over_35_slope <- equipment_emissions[Equipment_code=='H.10',]
+    } else if(user_inputs[variable=='residue_moisture',value]=='Green') {
+      trans_under_10_slope <- equipment_emissions[Equipment_code=='H.5',]
+      trans_10_to_35_slope <- equipment_emissions[Equipment_code=='H.1',]
+      trans_over_35_slope <- equipment_emissions[Equipment_code=='H.3',]
+    }
+    
+    # Harvest/Processing emissions - UPDATE FOR LOW VOLUME SCENARIO
+    if(user_inputs[variable=='harvest_comminution_opt',value]=='chip') {
+      ###################################
+      # harvest.comminution.opt decision
+      ###################################
+      # Processing emissions - Chipping
+      harvest_processing_emissions[,':='(
+        CO2_kg = # Cut to length
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(CO2_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(CO2_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CO2_kg)] +
+              # Whole tree
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(CO2_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(CO2_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CO2_kg)],
+        
+        CO_kg = # Cut to length
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(CO_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(CO_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CO_kg)] +
+              # Whole tree
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(CO_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(CO_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CO_kg)],
+        
+        N2O_kg = # Cut to length
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(N2O_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(N2O_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(N2O_kg)] +
+              # Whole tree
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(N2O_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(N2O_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(N2O_kg)],
+        
+        CH4_kg = # Cut to length
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(CH4_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(CH4_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CH4_kg)] +
+              # Whole tree
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(CH4_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(CH4_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CH4_kg)],
+        
+        NOx_kg = # Cut to length
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(NOx_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(NOx_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(NOx_kg)] +
+              # Whole tree
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(NOx_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(NOx_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(NOx_kg)],
+        
+        PMUnder10um_kg = # Cut to length
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(PMUnder10um_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(PMUnder10um_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(PMUnder10um_kg)] +
+              # Whole tree
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(PMUnder10um_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(PMUnder10um_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(PMUnder10um_kg)],
+        
+        PMUnder2.5um_kg = # Cut to length
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(PMUnder2.5um_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(PMUnder2.5um_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(PMUnder2.5um_kg)] +
+              # Whole tree
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(PMUnder2.5um_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(PMUnder2.5um_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(PMUnder2.5um_kg)],
+        
+        SOx_kg = # Cut to length
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(SOx_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(SOx_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(SOx_kg)] +
+              # Whole tree
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(SOx_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(SOx_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(SOx_kg)],
+        
+        VOC_kg = # Cut to length
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(VOC_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(VOC_kg)] +
+              cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(VOC_kg)] +
+              # Whole tree
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(VOC_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(VOC_kg)] +
+              cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(VOC_kg)]
+      )]
+    }
+    # Processing emissions - Grinding
+    if(user_inputs[variable=='harvest_comminution_opt',value]=='grind') {
+      harvest_processing_emissions[,':='(
+        CO2_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(CO2_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(CO2_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO2_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(CO2_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(CO2_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CO2_kg)],
+        
+        CO_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(CO_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(CO_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(CO_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(CO_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CO_kg)],
+        
+        N2O_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(N2O_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(N2O_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(N2O_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(N2O_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(N2O_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(N2O_kg)],
+        
+        CH4_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(CH4_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(CH4_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CH4_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(CH4_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(CH4_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CH4_kg)],
+        
+        NOx_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(NOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(NOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(NOx_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(NOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(NOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(NOx_kg)],
+        
+        PMUnder10um_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(PMUnder10um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(PMUnder10um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder10um_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(PMUnder10um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(PMUnder10um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(PMUnder10um_kg)],
+        
+        PMUnder2.5um_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(PMUnder2.5um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(PMUnder2.5um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder2.5um_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(PMUnder2.5um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(PMUnder2.5um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(PMUnder2.5um_kg)],
+        
+        SOx_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(SOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(SOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(SOx_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(SOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(SOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(SOx_kg)],
+        
+        VOC_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(VOC_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(VOC_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(VOC_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(VOC_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(VOC_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(VOC_kg)]
+      )]
+    }
+    
+    # Processing emissions - Chip & Grind. Chips CWD, grinds the rest.
+    if(user_inputs[variable=='harvest_comminution_opt',value]=='chipandgrind') {
+      harvest_processing_emissions[,':='(
+        CO2_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(CO2_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(CO2_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CO2_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO2_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(CO2_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(CO2_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CO2_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CO2_kg)],
+        
+        CO_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(CO_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(CO_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CO_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(CO_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(CO_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CO_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CO_kg)],
+        
+        N2O_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(N2O_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(N2O_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(N2O_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(N2O_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(N2O_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(N2O_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(N2O_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(N2O_kg)],
+        
+        CH4_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(CH4_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(CH4_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CH4_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CH4_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(CH4_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(CH4_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CH4_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CH4_kg)],
+        
+        NOx_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(NOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(NOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(NOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(NOx_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(NOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(NOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(NOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(NOx_kg)],
+        
+        PMUnder10um_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(PMUnder10um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(PMUnder10um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(PMUnder10um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder10um_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(PMUnder10um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(PMUnder10um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(PMUnder10um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(PMUnder10um_kg)],
+        
+        PMUnder2.5um_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(PMUnder2.5um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(PMUnder2.5um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(PMUnder2.5um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder2.5um_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(PMUnder2.5um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(PMUnder2.5um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(PMUnder2.5um_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(PMUnder2.5um_kg)],
+        
+        SOx_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(SOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(SOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(SOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(SOx_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(SOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(SOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(SOx_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(SOx_kg)],
+        
+        VOC_kg = # Cut to length
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(VOC_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(VOC_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(VOC_kg)] +
+          cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(VOC_kg)] +
+          # Whole tree
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(VOC_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(VOC_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(VOC_kg)] +
+          cbrec.dt[(merge_column=='Ground-Whole_Tree' | merge_column=='Cable-Whole_Tree') & cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(VOC_kg)]
+      )]
+    }
+    
+    # Transportation Emissions
+    # incorporate distance, as emissions are in tons * km. Remember: slope >=35 is not harvested.
+    harvest_processing_emissions[,':='(
+      CO2_kg = CO2_kg +
+               cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(CO2_kg)]] +
+               cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(CO2_kg)]] +
+               cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(CO2_kg)]],
+      
+      CO_kg = CO_kg +
+              cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(CO_kg)]] +
+              cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(CO_kg)]] +
+              cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(CO_kg)]],
 
-  ################################################
-  ################################################
-  # Debugging values
-  ################################################
-  ################################################
-#  ag.or.forest <- 'Agriculture'
-#  treatment.type <- 'None'
-#  initial.moisture <- 35
-#  harvest.collection.year.diff <- 4
-#  comminution.opt <- 'Grinding'
-#  post.harvest.processing <- 'None'
-#  scattered.fraction <- 0.5
-#  piled.fraction <- 0.5
-  
-  # Year should be 1-100. KEEP YEAR COLUMN FOR TRANSPARENCY
-  emissions.annual.profile <- data.table(Year=1:100,
-                                         Harvest_Tons.CO2.per.BDT.biomass=0,
-                                         Harvest_Tons.CH4.per.BDT.biomass=0,
-                                         Harvest_Tons.N2O.per.BDT.biomass=0,
-                                         Comminution_Tons.CO2.per.BDT.biomass=0,
-                                         Comminution_Tons.CH4.per.BDT.biomass=0,
-                                         Comminution_Tons.N2O.per.BDT.biomass=0,
-                                         Processing_Tons.CO2.per.BDT.biomass=0,
-                                         Processing_Tons.CH4.per.BDT.biomass=0,
-                                         Processing_Tons.N2O.per.BDT.biomass=0)
-  
-  # There are four emissions sources: harvest equipment, processing, comminution, and
-  # any pre-harvest decay. Equipment, processing, and comminution will require
-  # matching the correct emissions factor with the correct option, and applying to
-  # the harvest year.
- 
-  # Lookup table type information - harvest equipment, processing, and comminution 
-  # carbon intensities are stored in a directory labeled "Lookup_Data" in the main 
-  # directory. For speed and file size reasons, I want them as Rdata files. We
-  # can then clear out the data after we've performed the calculations we need to perform.
-  
-  # select.harvest.equipment will match our criteria to the appropriate equipment. 
-  # The function will return a 3-value vector; [CO2 intensity, CH4 intensity, N2O intensity]
-  selected.equipment <- select.harvest.equipment(TRUE)
-  
-  # Add harvest emissions to the harvest year. 
-  emissions.annual.profile[Year==harvest.collection.year.diff,':='(Harvest_Tons.CO2.per.BDT.biomass=selected.equipment[1],
-                                                                   Harvest_Tons.CH4.per.BDT.biomass=selected.equipment[2],
-                                                                   Harvest_Tons.N2O.per.BDT.biomass=selected.equipment[3])]
-  
-  # Load up the comminution data, add the appropriate emissions to the profile, and then
-  # remove the data. 
-  load("Lookup_Data/comminution-CI.Rdata")
-  emissions.annual.profile[Year==harvest.collection.year.diff,':='(Comminution_Tons.CO2.per.BDT.biomass=comminution.CI[Comminution==comminution.opt,Tons.CO2.per.BDT.biomass],
-                                                                   Comminution_Tons.CH4.per.BDT.biomass=comminution.CI[Comminution==comminution.opt,Tons.CH4.per.BDT.biomass],
-                                                                   Comminution_Tons.N2O.per.BDT.biomass=comminution.CI[Comminution==comminution.opt,Tons.N2O.per.BDT.biomass])]
-  comminution.mass.loss <- comminution.CI[Comminution==comminution.opt,Post_Comminution.Mass.Loss]
-  remove(comminution.CI)
-  
-  # Repeat for processing
-  load("Lookup_Data/processing-CI.Rdata")
-  emissions.annual.profile[Year==harvest.collection.year.diff,':='(Processing_Tons.CO2.per.BDT.biomass=processing.CI[Processing==post.harvest.processing,Tons.CO2.per.BDT.biomass],
-                                                                   Processing_Tons.CH4.per.BDT.biomass=processing.CI[Processing==post.harvest.processing,Tons.CH4.per.BDT.biomass],
-                                                                   Processing_Tons.N2O.per.BDT.biomass=processing.CI[Processing==post.harvest.processing,Tons.N2O.per.BDT.biomass])]
-  processing.mass.loss <- processing.CI[Processing==post.harvest.processing,Post_Processing.Mass.Loss]
-  remove(processing.CI)
-  
-  # Now to tackle decay emissions. In spreadsheet form, we calculated the mass loss and 
-  # looked up the appropriate values. This led to giant lookup tables. Instead, we have 
-  # a file of decay functions labeled by decay function selection criteria, i.e. 
-  # "Forestry.Mixed", Agriculture.Corn", or "Agriculture.Cotton". Using "match.fun"
-  # ('get' would also work), we can select the needed decay function and calculate only
-  # what we need based on the year.
-  
-  # Currently, the labels for the dummy functions are ag.or.forest and the primary harvest species. 
-  # I've also only written three dummy functions.
-  decay.function.key <- paste(ag.or.forest,this.location@primary.harvest.species,'decay',sep='.')
-  decay.function <- match.fun(decay.function.key)
-  
-  # Now that we have the appropriate decay function, create a column in emissions.annual.profile
-  # for the cumulative decay at year X. In addition to the standard input data needed to calculate
-  # decay, the decay function also requires the specific emissions species (CO2, CH4, N2O). The 
-  # output will be the tons emissions/BDT biomass
-  
-  emissions.annual.profile[Year<=harvest.collection.year.diff,':='(Cumulative.Decay_Tons.CO2.per.BDT.biomass=mapply(decay.function,"CO2",Year,scattered.fraction,piled.fraction),
-                                                                   Cumulative.Decay_Tons.CH4.per.BDT.biomass=mapply(decay.function,"CH4",Year,scattered.fraction,piled.fraction),
-                                                                   Cumulative.Decay_Tons.N2O.per.BDT.biomass=mapply(decay.function,"N2O",Year,scattered.fraction,piled.fraction))]
-  
-  emissions.annual.profile[,':='(Cumulative.Decay_Tons.CO2.per.BDT.biomass=na.locf(Cumulative.Decay_Tons.CO2.per.BDT.biomass,na.rm=FALSE),
-                                 Cumulative.Decay_Tons.CH4.per.BDT.biomass=na.locf(Cumulative.Decay_Tons.CH4.per.BDT.biomass,na.rm=FALSE),
-                                 Cumulative.Decay_Tons.N2O.per.BDT.biomass=na.locf(Cumulative.Decay_Tons.N2O.per.BDT.biomass,na.rm=FALSE))]
+      N2O_kg = N2O_kg +
+               cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(N2O_kg)]] +
+               cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(N2O_kg)]] +
+               cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(N2O_kg)]],
 
-  # Calculate the annual emissions difference from the cumulative emissions
-  emissions.annual.profile[,':='(Annual.Decay_Tons.CO2.per.BDT.biomass=Cumulative.Decay_Tons.CO2.per.BDT.biomass - c(0,Cumulative.Decay_Tons.CO2.per.BDT.biomass[(.I-1)]),
-                                 Annual.Decay_Tons.CH4.per.BDT.biomass=Cumulative.Decay_Tons.CH4.per.BDT.biomass - c(0,Cumulative.Decay_Tons.CH4.per.BDT.biomass[(.I-1)]),
-                                 Annual.Decay_Tons.N2O.per.BDT.biomass=Cumulative.Decay_Tons.N2O.per.BDT.biomass - c(0,Cumulative.Decay_Tons.N2O.per.BDT.biomass[(.I-1)]))]
-
-  # Add up the total annual emissions, then determine the cumulative
-  emissions.annual.profile[,':='(Annual.Total_Tons.CO2.per.BDT.biomass = Harvest_Tons.CO2.per.BDT.biomass + Comminution_Tons.CO2.per.BDT.biomass + Processing_Tons.CO2.per.BDT.biomass + Annual.Decay_Tons.CO2.per.BDT.biomass,
-                                 Annual.Total_Tons.CH4.per.BDT.biomass = Harvest_Tons.CH4.per.BDT.biomass + Comminution_Tons.CH4.per.BDT.biomass + Processing_Tons.CH4.per.BDT.biomass + Annual.Decay_Tons.CH4.per.BDT.biomass,
-                                 Annual.Total_Tons.N2O.per.BDT.biomass = Harvest_Tons.N2O.per.BDT.biomass + Comminution_Tons.N2O.per.BDT.biomass + Processing_Tons.N2O.per.BDT.biomass + Annual.Decay_Tons.N2O.per.BDT.biomass)]
-  
-  emissions.annual.profile[,':='(Cumulative.Total_Tons.CO2.per.BDT.biomass = cumsum(Annual.Total_Tons.CO2.per.BDT.biomass),
-                                 Cumulative.Total_Tons.CH4.per.BDT.biomass = cumsum(Annual.Total_Tons.CH4.per.BDT.biomass),
-                                 Cumulative.Total_Tons.N2O.per.BDT.biomass = cumsum(Annual.Total_Tons.N2O.per.BDT.biomass))]
-  
-  # Processing, comminution, and decay emissions have been calculated, and comminution/
-  # processing mass loss calculations are complete. Last, we calculate moisture loss
-  moisture.loss.function.key <- paste(ag.or.forest,this.location@primary.harvest.species,'moisture.loss',sep='.')
-  moisture.loss.function <- match.fun(moisture.loss.function.key)
-  harvest.processing.moisture.loss <- moisture.loss.function(harvest.collection.year.diff)
-  
-  harvest.processing.return.obj <- new("module.output",
-           emissions.timeline = emissions.annual.profile,
-           mass.loss = processing.mass.loss+comminution.mass.loss,
-           remaining.moisture = initial.moisture * harvest.processing.moisture.loss
-  )
-  
-  return(harvest.processing.return.obj)
+      CH4_kg = CH4_kg +
+               cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(CH4_kg)]] +
+               cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(CH4_kg)]] +
+               cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(CH4_kg)]],
+      
+      NOx_kg = NOx_kg +
+               cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(NOx_kg)]] +
+               cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(NOx_kg)]] +
+               cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(NOx_kg)]],
+      
+      PMUnder10um_kg = PMUnder10um_kg +
+                       cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(PMUnder10um_kg)]] +
+                       cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(PMUnder10um_kg)]] +
+                       cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(PMUnder10um_kg)]],
+      
+      PMUnder2.5um_kg = PMUnder2.5um_kg +
+                        cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(PMUnder2.5um_kg)]] +
+                        cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(PMUnder2.5um_kg)]] +
+                        cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(PMUnder2.5um_kg)]],
+      
+      SOx_kg = SOx_kg +
+               cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(SOx_kg)]] +
+               cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(SOx_kg)]] +
+               cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(SOx_kg)]],
+      
+      VOC_kg = VOC_kg +
+               cbrec.dt[cell_slope<=10,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(VOC_kg)]] +
+               cbrec.dt[cell_slope>10 & cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(VOC_kg)]] +
+               cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(VOC_kg)]]
+    )]
+    
+    # Processing mass loss and mass transfer to power plant
+    # In the high volume scenario, the only residues that are NOT processed and NOT sent to the power plant are those with the merge column "Do_Not_Harvest"
+    # Step 1, populate the mass_to_plant_tonsAcre from the recovered columns.
+    cbrec.dt[merge_column!="Do_Not_Harvest",mass_to_plant_tonsAcre := Recovered_CWD_tonsAcre * (1-processing.mass.loss) + Recovered_FWD_tonsAcre * (1-processing.mass.loss) + Recovered_Foliage_tonsAcre * (1-processing.mass.loss)]
+    
+    # Step 2, remove processed materials from the recovered materials. Leftover materials will be exposed to decay and wildfire.
+    cbrec.dt[merge_column!="Do_Not_Harvest",':='(Recovered_CWD_tonsAcre = Recovered_CWD_tonsAcre * processing.mass.loss,
+                                                 Recovered_FWD_tonsAcre = Recovered_FWD_tonsAcre * processing.mass.loss,
+                                                 Recovered_Foliage_tonsAcre = Recovered_Foliage_tonsAcre * processing.mass.loss)]
+    
+    
+    
+    
+    # Processing mass loss and mass transfer to power plant
+    # In the low volume scenario, the only residues that are NOT processed and NOT sent to the power plant are those with the merge column "Do_Not_Harvest"
+    # Step 1, populate the mass_to_plant_tonsAcre from the recovered columns.
+    cbrec.dt[merge_column!="Do_Not_Harvest", mass_to_plant_tonsAcre := Recovered_CWD_tonsAcre * (1-processing.mass.loss) + Recovered_FWD_tonsAcre * (1-processing.mass.loss) + Recovered_Foliage_tonsAcre * (1-processing.mass.loss)]
+    
+    # Step 2, remove processed materials from the recovered materials. Leftover materials will be exposed to decay and wildfire.
+    cbrec.dt[merge_column!="Do_Not_Harvest",':='(Recovered_CWD_tonsAcre = Recovered_CWD_tonsAcre * processing.mass.loss,
+                                                 Recovered_FWD_tonsAcre = Recovered_FWD_tonsAcre * processing.mass.loss,
+                                                 Recovered_Foliage_tonsAcre = Recovered_Foliage_tonsAcre * processing.mass.loss)]
+  }
+    
+  return(harvest_processing_emissions)
 }

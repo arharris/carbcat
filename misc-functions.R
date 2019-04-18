@@ -27,3 +27,14 @@ load.libraries <- function (needed.packs, quietly = T)
     }
   }
 }
+
+cell_to_acres <- 90 * 0.000247105 # 30 m x 30 m cell converted to acres
+
+# (Mass emissions species) / (Mass carbon emitted)
+CO2_carbon_fraction <- 44.009/12.011
+CH4_carbon_fraction <- 16.0426/12.011
+CO_carbon_fraction <- 28.010/12.011
+# These are currently dummy values
+PM10_carbon_fraction <- 31/12.011
+PM2.5_carbon_fraction <- 45/12.011
+VOC_carbon_fraction <- 60/12.011

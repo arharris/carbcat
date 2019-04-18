@@ -29,6 +29,10 @@
 # Global constants
 duff_decay_mass_fraction <- 0.02
 duff_k_val <- 0.002
+CH4_decay_emissions_factor <- 0.05 # Mass CH4 emitted/mass biomass decayed.
+#########################################################################################
+# THIS WILL REQUIRE A CHANGE - CONVERT TO CARBON FRACTIONS!
+#########################################################################################
 
 # Multi-Year Decay
 # -------------------------------------------------------------------------------------------------
@@ -76,7 +80,7 @@ one_year_decay_fun <- function(residue, k_val, t) {
 # -------------------------------------------------------------------------------------------------
 # OBJECTIVE:
 # This function will, for a given residue segment (scattered, field piled, landing piled) calculate
-# the mass decayed in a one-year period along all residue size classes (including duff). The decayed
+# the mass decayed in a one-year period along all residue size classes (EXCLUDING duff). The decayed
 # mass is either allocated to duff or emissions; if decay has progressed enough, foliage decay 
 # entirely to duff is addressed.
 # -------------------------------------------------------------------------------------------------
@@ -113,8 +117,8 @@ decay_fun <- function(cbrec.dt,residue.segment,year.i) {
   
   # Repeat for the fire exposed but unburned mass.
   cbrec.dt[,':='(prev_fired_CWD_mass = prev_fired_CWD_mass - prev_fired_decay_CWD_mass_year_i,
-                        prev_fired_FWD_mass = prev_fired_FWD_mass - prev_fired_decay_FWD_mass_year_i,
-                        prev_fired_Foliage_mass = prev_fired_Foliage_mass - prev_fired_decay_Foliage_mass_year_i)]
+                 prev_fired_FWD_mass = prev_fired_FWD_mass - prev_fired_decay_FWD_mass_year_i,
+                 prev_fired_Foliage_mass = prev_fired_Foliage_mass - prev_fired_decay_Foliage_mass_year_i)]
   
   # Check if the foliage mass should be at least 1/2 decayed using decay_Foliage_cumfrac; if so, convert the rest of the foliage to duff.
   cbrec.dt[decay_Foliage_cumfrac <= 0.5, Duff_tonsAcre := Duff_tonsAcre + get(paste(residue.segment,"Foliage_tonsAcre",sep="_"))]
@@ -124,22 +128,50 @@ decay_fun <- function(cbrec.dt,residue.segment,year.i) {
   cbrec.dt[decay_Foliage_cumfrac <= 0.5, prev_fired_Duff_mass := prev_fired_Duff_mass + prev_fired_Foliage_mass]
   cbrec.dt[decay_Foliage_cumfrac <= 0.5, prev_fired_Foliage_mass := 0]
   
-  # Calculate emissions
-  cbrec.dt[,paste("Emissions_year_",year.i,sep='') := get(paste("Emissions_year_",year.i,sep='')) + (1-duff_decay_mass_fraction) * (decay_CWD_mass_year_i + decay_FWD_mass_year_i + decay_Foliage_mass_year_i)]
+  # Calculate emissions - decay will generate CO2 and CH4, all other species are 0.
+  # CH4 - be sure to convert from tons carbon to tons CH4
+  cbrec.dt[,paste("Emissions_CH4_year_",year.i,sep='') := get(paste("Emissions_CH4_year_",year.i,sep='')) + (1-duff_decay_mass_fraction) * CH4_decay_emissions_factor * CH4_carbon_fraction * Carbon_frac * (decay_CWD_mass_year_i + decay_FWD_mass_year_i + decay_Foliage_mass_year_i)]
   
-  # Now decay duff, add emissions, and adjust mass totals
-  cbrec.dt[,paste("Emissions_year_",year.i,sep='') := get(paste("Emissions_year_",year.i,sep='')) + one_year_decay_fun(Duff_tonsAcre,duff_k_val,year.i)]
+  # CO2 - be sure to convert from tons carbon to tons CO2. Any carbon not emitted as CH4 will be as CO2.
+  cbrec.dt[,paste("Emissions_CO2_year_",year.i,sep='') := get(paste("Emissions_CO2_year_",year.i,sep='')) + (1-duff_decay_mass_fraction) * (1 - CH4_decay_emissions_factor) * CO2_carbon_fraction * Carbon_frac * (decay_CWD_mass_year_i + decay_FWD_mass_year_i + decay_Foliage_mass_year_i)]
+  
+  
+  # Repeat decay emissions for previously fired materials.
+  cbrec.dt[,paste("Emissions_CH4_year_",year.i,sep='') := get(paste("Emissions_CH4_year_",year.i,sep='')) + (1-duff_decay_mass_fraction) * CH4_decay_emissions_factor * CH4_carbon_fraction * Carbon_frac * (prev_fired_decay_CWD_mass_year_i + prev_fired_decay_FWD_mass_year_i + prev_fired_decay_Foliage_mass_year_i)]
+  cbrec.dt[,paste("Emissions_CO2_year_",year.i,sep='') := get(paste("Emissions_CO2_year_",year.i,sep='')) + (1-duff_decay_mass_fraction) * (1 - CH4_decay_emissions_factor) * CO2_carbon_fraction * Carbon_frac * (prev_fired_decay_CWD_mass_year_i + prev_fired_decay_FWD_mass_year_i + prev_fired_decay_Foliage_mass_year_i)]
+  
+  return(cbrec.dt)
+}
+
+
+# Duff Decay Function
+# -------------------------------------------------------------------------------------------------
+# OBJECTIVE:
+# This function will calculate the mass decayed in a one-year period. This is separate from the main
+# residue segments so that we can eliminate the residue segment loop.
+# -------------------------------------------------------------------------------------------------
+# INPUTS:
+# cbrec.dt: the main study area data table from the calling script, which contains residue data and
+#   100 years of decay and char data.
+# year.i: The year for which we want to calculate the decay and emissions from the year prior (i.e.,
+# if t=3, we would calculate the decay between years 2-3.)
+# -------------------------------------------------------------------------------------------------
+# OUTPUTS:
+# An updated cbrec.dt, with dynamic mass and emissions data reflecting calculated changes.
+# -------------------------------------------------------------------------------------------------
+
+duff_decay_fun <- function(cbrec.dt,year.i) {
+  # We should have accumulated duff from all residues prior to calling this function. Now we can decay duff, add the resulting emissions, and adjust duff mass totals
+  cbrec.dt[,paste("Emissions_CH4_year_",year.i,sep='') := get(paste("Emissions_CH4_year_",year.i,sep='')) + one_year_decay_fun(Duff_tonsAcre,duff_k_val,year.i)] * CH4_decay_emissions_factor * Carbon_frac * CH4_carbon_fraction
+  cbrec.dt[,paste("Emissions_CO2_year_",year.i,sep='') := get(paste("Emissions_CO2_year_",year.i,sep='')) + one_year_decay_fun(Duff_tonsAcre,duff_k_val,year.i)] * (1 - CH4_decay_emissions_factor) * Carbon_frac * CO2_carbon_fraction
   cbrec.dt[,Duff_tonsAcre := Duff_tonsAcre - one_year_decay_fun(Duff_tonsAcre,duff_k_val,year.i)]
   
-  # Repeat emissions and duff decay for previously fired materials.
-  cbrec.dt[,paste("Emissions_year_",year.i,sep='') := get(paste("Emissions_year_",year.i,sep='')) + (1-duff_decay_mass_fraction) * (prev_fired_decay_CWD_mass_year_i + prev_fired_decay_FWD_mass_year_i + prev_fired_decay_Foliage_mass_year_i)]
-  
-  # Duff decay - previously fired
-  cbrec.dt[,paste("Emissions_year_",year.i,sep='') := get(paste("Emissions_year_",year.i,sep='')) + one_year_decay_fun(prev_fired_Duff_mass,duff_k_val,year.i)]
+  # Repeat for previously fired duff.
+  cbrec.dt[,paste("Emissions_CH4_year_",year.i,sep='') := get(paste("Emissions_CH4_year_",year.i,sep='')) + one_year_decay_fun(prev_fired_Duff_mass,duff_k_val,year.i)] * CH4_decay_emissions_factor * Carbon_frac * CH4_carbon_fraction
+  cbrec.dt[,paste("Emissions_CO2_year_",year.i,sep='') := get(paste("Emissions_CO2_year_",year.i,sep='')) + one_year_decay_fun(prev_fired_Duff_mass,duff_k_val,year.i)] * (1 - CH4_decay_emissions_factor) * Carbon_frac * CO2_carbon_fraction
   cbrec.dt[,prev_fired_Duff_mass := prev_fired_Duff_mass - one_year_decay_fun(prev_fired_Duff_mass,duff_k_val,year.i)]
   
   return(cbrec.dt)
-  
 }
 
 
