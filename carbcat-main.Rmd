@@ -5,7 +5,7 @@ Source relevant module and function files.
 ```{r}
 #source("class_LocationData.R")
 source("class_ModuleOutput.R")
-# source("harvest-processing.R")
+source("harvest-processing.R")
 source("prescribed-burn-functions.R")
 source("decay-functions.R")
 source('wildfire-functions.R')
@@ -38,6 +38,11 @@ If the dataset is full, most of those points are empty. In either case, once loa
 the subset of points that correspond to actual data. 
 
 Once we have the smaller data set, convert to a data table and combine with the residue and decay tables.
+
+ANDY: LOOK HERE
+Our model runs cases individually, rather than paired scenarios, because of memory constraints of running two data pairs in a single run. BUT scenarios are going to cover the same geographic study area, 
+and the most runtime-heavy code segment is the raster cropping and masking. So, if the first time we run a case, we run the raster process, save the resultant study_area_FCID, and THEN apply scenario_matrix
+variables, we make this whiole thing run much quicker. This will require clear design for input/output file structure.
 
 For agricultural data:
 (TBA)
@@ -128,114 +133,6 @@ if(user_inputs[variable=='ag_or_forest',value]=='agricultural') {
 beep(5)
 ```
 
-We now have a spatially-indexed data table with residue loading information and cell slope values. Now we figure out what the technically recoverable residue is.
-```{r}
-# The harvest system and type will vary by slope; read in the harvest system file to get the slope criteria
-harvest_system_criteria <- data.table(read.csv(user_inputs[variable=='harvest_system_file',value]))
-
-# Remove the harvest systems screen out by having min/max slopes less than 0
-harvest_system_criteria <- harvest_system_criteria[min_slope>=0&max_slope>=0,]
-
-# If any of the slope criteria overlaps, we will run into a problem. I want to program a check for that here, but don't know how I want to do that. 
-# Note that we will assume min criteria is inclusive (i.e. x >= min), max is exclusive (i.e. x < max). So, for complete criteria, the min should be 0, the max should be greater than 1. 
-# The other mins/maxes should have a match in the data set.
-# <Insert code for check here>
-
-#######################################################################################################################################################
-# Cell slope DOES NOT max out at 100%. Add an addtional category "Do_Not_Harvest", for cell slopes that prevent any kind of harvest.
-#######################################################################################################################################################
-
-# Apply the appropriate harvest system based on cell slope
-study_area_FCID[,harvest_system := harvest_system_criteria[1,harvest_system]]
-
-for(row.i in 2:nrow(harvest_system_criteria)) {
-  study_area_FCID[cell_slope >= harvest_system_criteria[row.i,min_slope] & cell_slope < harvest_system_criteria[row.i,max_slope],harvest_system := harvest_system_criteria[row.i,harvest_system]]
-}
-
-# The technically available residues will be based on silvicultural treatment, harvest system/type (currently the harvest_system column),
-# burn type, biomass collection, and pulp market. Within a scenario, treatment, burn type, biomass collection, and pulp market are decided 
-# across the entire study area. Harvest system will vary based on slope. Rather than create an ID for study_area_FCID and merging with the complete scenario martix,
-# create a smaller scenario matrix filtered through the user inputs, and merge with study_area_FCID based upon harvest_system.
-complete_scenario_matrix <- data.table(read.csv(user_inputs[variable=='scenario_matrix_file',value]))
-
-# Trim to the treatment, burn type, biomass collection, and pulp market
-scenario_matrix <- copy(complete_scenario_matrix[Silvicultural.Treatment==user_inputs[variable=='treatment_type',value] & Burn.Type==user_inputs[variable=='burn_type',value] & Biomass.Collection==user_inputs[variable=='biomass_collection',value] & Pulp.Market==user_inputs[variable=='has_pulp_market',value],])
-
-# Running into a memory issue here; we're looking at 158 million rows and 12 columns, and merging with the scenario matrix would more than double that.
-# We're going to try breaking up the scenario matrix into one segment at a time (recovered, merchantable, (do we need merchantable?), landing piled, field piled, scattered)
-# Merge one segment of scenario matrix at a time, transform the needed columns, and then clear out. We're about at max data table memory.
-
-########################################
-# Combine stem and bark residues.
-########################################
-
-# Merge senario matrix with study_area_FCID
-scenario_matrix[,merge_column := paste(Harvest.System,Harvest.Type,sep='-')]
-scenario_matrix[,':='(Silvicultural.Treatment=NULL, Harvest.System=NULL, Harvest.Type=NULL, Burn.Type=NULL, Biomass.Collection=NULL, Pulp.Market=NULL)]
-setkey(scenario_matrix,merge_column)
-setkey(study_area_FCID,harvest_system)
-study_area_FCID <- scenario_matrix[study_area_FCID]
-
-# Combine the technically available fractions with the gross resource base.
-study_area_FCID[,':='(Recovered_Stem9Plus_tonsAcre = Recovered_Stem9Plus * Stem9Plus_tonsAcre,
-                   Recovered_Stem6to9_tonsAcre = Recovered_Stem6to9 * Stem6to9_tonsAcre,
-                   Recovered_Stem4to6_tonsAcre = Recovered_Stem4to6 * Stem4to6_tonsAcre,
-                   Recovered_Bark9Plus_tonsAcre = Recovered_Bark9Plus * Bark9Plus_tonsAcre,
-                   Recovered_Bark6to9_tonsAcre = Recovered_Bark6to9 * Bark6to9_tonsAcre,
-                   Recovered_Bark4to6_tonsAcre = Recovered_Bark4to6 * Bark4to6_tonsAcre,
-                   Recovered_Branch_tonsAcre = Recovered_Branch * Branch_tonsAcre,
-                   Recovered_Foliage_tonsAcre = Recovered_Foliage * Foliage_tonsAcre,
-                   Merchantable_Stem9Plus_tonsAcre = Merchantable_Stem9Plus * Stem9Plus_tonsAcre,
-                   Merchantable_Stem6to9_tonsAcre = Merchantable_Stem6to9 * Stem6to9_tonsAcre,
-                   Merchantable_Stem4to6_tonsAcre = Merchantable_Stem4to6 * Stem4to6_tonsAcre,
-                   Merchantable_Bark9Plus_tonsAcre = Merchantable_Bark9Plus * Bark9Plus_tonsAcre,
-                   Merchantable_Bark6to9_tonsAcre = Merchantable_Bark6to9 * Bark6to9_tonsAcre,
-                   Merchantable_Bark4to6_tonsAcre = Merchantable_Bark4to6 * Bark4to6_tonsAcre,
-                   Merchantable_Branch_tonsAcre = Merchantable_Branch * Branch_tonsAcre,
-                   Merchantable_Foliage_tonsAcre = Merchantable_Foliage * Foliage_tonsAcre,
-                   LandingPiled_Stem9Plus_tonsAcre = LandingPiled_Stem9Plus * Stem9Plus_tonsAcre,
-                   LandingPiled_Stem6to9_tonsAcre = LandingPiled_Stem6to9 * Stem6to9_tonsAcre,
-                   LandingPiled_Stem4to6_tonsAcre = LandingPiled_Stem4to6 * Stem4to6_tonsAcre,
-                   LandingPiled_Bark9Plus_tonsAcre = LandingPiled_Bark9Plus * Bark9Plus_tonsAcre,
-                   LandingPiled_Bark6to9_tonsAcre = LandingPiled_Bark6to9 * Bark6to9_tonsAcre,
-                   LandingPiled_Bark4to6_tonsAcre = LandingPiled_Bark4to6 * Bark4to6_tonsAcre,
-                   LandingPiled_Branch_tonsAcre = LandingPiled_Branch * Branch_tonsAcre,
-                   LandingPiled_Foliage_tonsAcre = LandingPiled_Foliage * Foliage_tonsAcre,
-                   FieldPiled_Stem9Plus_tonsAcre = FieldPiled_Stem9Plus * Stem9Plus_tonsAcre,
-                   FieldPiled_Stem6to9_tonsAcre = FieldPiled_Stem6to9 * Stem6to9_tonsAcre,
-                   FieldPiled_Stem4to6_tonsAcre = FieldPiled_Stem4to6 * Stem4to6_tonsAcre,
-                   FieldPiled_Bark9Plus_tonsAcre = FieldPiled_Bark9Plus * Bark9Plus_tonsAcre,
-                   FieldPiled_Bark6to9_tonsAcre = FieldPiled_Bark6to9 * Bark6to9_tonsAcre,
-                   FieldPiled_Bark4to6_tonsAcre = FieldPiled_Bark4to6 * Bark4to6_tonsAcre,
-                   FieldPiled_Branch_tonsAcre = FieldPiled_Branch * Branch_tonsAcre,
-                   FieldPiled_Foliage_tonsAcre = FieldPiled_Foliage * Foliage_tonsAcre,
-                   Scattered_Stem9Plus_tonsAcre = Scattered_Stem9Plus * Stem9Plus_tonsAcre,
-                   Scattered_Stem6to9_tonsAcre = Scattered_Stem6to9 * Stem6to9_tonsAcre,
-                   Scattered_Stem4to6_tonsAcre = Scattered_Stem4to6 * Stem4to6_tonsAcre,
-                   Scattered_Bark9Plus_tonsAcre = Scattered_Bark9Plus * Bark9Plus_tonsAcre,
-                   Scattered_Bark6to9_tonsAcre = Scattered_Bark6to9 * Bark6to9_tonsAcre,
-                   Scattered_Bark4to6_tonsAcre = Scattered_Bark4to6 * Bark4to6_tonsAcre,
-                   Scattered_Branch_tonsAcre = Scattered_Branch * Branch_tonsAcre,
-                   Scattered_Foliage_tonsAcre = Scattered_Foliage * Foliage_tonsAcre
-)]
-
-# Trim out the columns we no longer need
-study_area_FCID[,':='(Recovered_Stem9Plus = NULL, Stem9Plus_tonsAcre = NULL, Recovered_Stem6to9 = NULL, Stem6to9_tonsAcre = NULL, Recovered_Stem4to6 = NULL,
-                   Stem4to6_tonsAcre = NULL, Recovered_Bark9Plus = NULL, Bark9Plus_tonsAcre = NULL, Recovered_Bark6to9 = NULL, Bark6to9_tonsAcre = NULL,
-                   Recovered_Bark4to6 = NULL, Bark4to6_tonsAcre = NULL, Recovered_Branch = NULL, Branch_tonsAcre = NULL, Recovered_Foliage = NULL,
-                   Foliage_tonsAcre = NULL, Merchantable_Stem9Plus = NULL, Merchantable_Stem6to9 = NULL, Merchantable_Stem4to6 = NULL,  Merchantable_Bark9Plus = NULL,
-                   Merchantable_Bark6to9 = NULL, Merchantable_Bark4to6 = NULL, Merchantable_Branch = NULL, Merchantable_Foliage = NULL, LandingPiled_Stem9Plus = NULL,
-                   LandingPiled_Stem6to9 = NULL, LandingPiled_Stem4to6 = NULL, LandingPiled_Bark9Plus = NULL, LandingPiled_Bark6to9 = NULL, LandingPiled_Bark4to6 = NULL, 
-                   LandingPiled_Branch = NULL, LandingPiled_Foliage = NULL, FieldPiled_Stem9Plus = NULL, FieldPiled_Stem6to9 = NULL, FieldPiled_Stem4to6 = NULL, 
-                   FieldPiled_Bark9Plus = NULL, FieldPiled_Bark6to9 = NULL, FieldPiled_Bark4to6 = NULL, FieldPiled_Branch = NULL, FieldPiled_Foliage = NULL,
-                   Scattered_Stem9Plus = NULL, Scattered_Stem6to9 = NULL, Scattered_Stem4to6 = NULL, Scattered_Bark9Plus = NULL, Scattered_Bark6to9 = NULL,
-                   Scattered_Bark4to6 = NULL, Scattered_Branch = NULL, Scattered_Foliage = NULL
-)]
-
-# We now have a data table of the tons per acre for each cell within the study area. No we analyze the use case (collecting residues for power plants), and the reference case (residues are not collected for power plants).
-
-```
-
 Load the decay rate rasters
 ```{r}
 # There are currently 3 decay rasters: one for CWD, FWD, and foliage. From our notes, there should be six rates (for piled and scattered), not just 3.
@@ -293,12 +190,110 @@ CWD_decay_rates <- NULL
 FWD_decay_rates <- NULL
 foliage_decay_rates <- NULL
 
-# Last step: for decay, we will actually need 6 decay rates: the 3 for scattered decay (CWD, FWD, foliage), and decay rates for the same material classes
-# in piles. The piled rates are just the other rates multiplied by a scalar factor; this we can hard code:
-piled_K_coeff <- 0.7516606 # 0.721265744184168; changed March 2019 to reflect proportion of ground contact within pile.
+beep(4)
+```
+
+Load some premade data for development and debugging.
+```{r}
+load('/Volumes/744GB-Storage/CBREC R data/study_area_FCID.Rdata')
+
+# We'll need the shape file 
+if(!is.na(user_inputs[variable=='study_area_mask_file',value])) {
+    study_area_mask <- readOGR(user_inputs[variable=='study_area_mask_file',value])
+}
 
 beep(4)
 ```
+
+We now have a spatially-indexed data table with residue loading information, decay rates, and cell slope values These values should be the same for every study area.
+Now we figure out what the technically recoverable residue is.
+
+```{r}
+# The technically available residues will be based on silvicultural treatment, harvest system/type (currently the harvest_system column),
+# burn type, biomass collection, and pulp market. Within a scenario, treatment, burn type, biomass collection, and pulp market are decided 
+# across the entire study area. Harvest system will vary based on slope. Rather than create an ID for study_area_FCID and merging with the complete scenario martix,
+# create a smaller scenario matrix filtered through the user inputs, and merge with study_area_FCID based upon harvest_system.
+complete_scenario_matrix <- data.table(read.csv(user_inputs[variable=='scenario_matrix_file',value]))
+
+# Trim to the treatment, burn type, biomass collection, and pulp market
+scenario_matrix <- copy(complete_scenario_matrix[Fraction_Piled_Residues==user_inputs[variable=='fraction_piled_residues',value] &
+                                                 Silvicultural.Treatment==user_inputs[variable=='treatment_type',value] & 
+                                                 Burn.Type==user_inputs[variable=='burn_type',value] & 
+                                                 Biomass.Collection==user_inputs[variable=='biomass_collection',value] & 
+                                                 Pulp.Market==user_inputs[variable=='has_pulp_market',value],])
+
+########################################
+# Combine stem and bark residues.
+########################################
+
+# Merge senario matrix with study_area_FCID; this will be based on cell slope (>40%, <40%, or remove from study)
+scenario_matrix[,':='(ID=NULL, Fraction_Piled_Residues=NULL, Fraction_Scattered_Residues=NULL, Silvicultural.Treatment=NULL, Burn.Type=NULL, Biomass.Collection=NULL, Pulp.Market=NULL)]
+setkey(scenario_matrix,Slope)
+
+###########################################################
+###########################################################
+# We may be able to speed this up by converting to factors
+###########################################################
+###########################################################
+setkey(study_area_FCID,cell_slope)
+study_area_FCID[,merge_column := "GT40"]
+study_area_FCID[cell_slope<40,merge_column := "LT40"]
+
+# Delete entries after the slope cutoff point
+study_area_FCID <- study_area_FCID[cell_slope<as.numeric(user_inputs[variable=='residue_slope_cutoff',value])]
+
+# Merge study_area_FCID with the scenario matrix
+setkey(study_area_FCID,merge_column)
+study_area_FCID <- scenario_matrix[study_area_FCID]
+
+# Combine the technically available fractions with the gross resource base.
+study_area_FCID[,':='(Recovered_Stem9Plus_tonsAcre = Recovered_Stem9Plus * Stem9Plus_tonsAcre,
+                   Recovered_Stem6to9_tonsAcre = Recovered_Stem6to9 * Stem6to9_tonsAcre,
+                   Recovered_Stem4to6_tonsAcre = Recovered_Stem4to6 * Stem4to6_tonsAcre,
+                   Recovered_Bark9Plus_tonsAcre = Recovered_Bark9Plus * Bark9Plus_tonsAcre,
+                   Recovered_Bark6to9_tonsAcre = Recovered_Bark6to9 * Bark6to9_tonsAcre,
+                   Recovered_Bark4to6_tonsAcre = Recovered_Bark4to6 * Bark4to6_tonsAcre,
+                   Recovered_Branch_tonsAcre = Recovered_Branch * Branch_tonsAcre,
+                   Recovered_Foliage_tonsAcre = Recovered_Foliage * Foliage_tonsAcre,
+                   Merchantable_Stem9Plus_tonsAcre = Merchantable_Stem9Plus * Stem9Plus_tonsAcre,
+                   Merchantable_Stem6to9_tonsAcre = Merchantable_Stem6to9 * Stem6to9_tonsAcre,
+                   Merchantable_Stem4to6_tonsAcre = Merchantable_Stem4to6 * Stem4to6_tonsAcre,
+                   Merchantable_Bark9Plus_tonsAcre = Merchantable_Bark9Plus * Bark9Plus_tonsAcre,
+                   Merchantable_Bark6to9_tonsAcre = Merchantable_Bark6to9 * Bark6to9_tonsAcre,
+                   Merchantable_Bark4to6_tonsAcre = Merchantable_Bark4to6 * Bark4to6_tonsAcre,
+                   Merchantable_Branch_tonsAcre = Merchantable_Branch * Branch_tonsAcre,
+                   Merchantable_Foliage_tonsAcre = Merchantable_Foliage * Foliage_tonsAcre,
+                   Piled_Stem9Plus_tonsAcre = Piled_Stem9Plus * Stem9Plus_tonsAcre,
+                   Piled_Stem6to9_tonsAcre = Piled_Stem6to9 * Stem6to9_tonsAcre,
+                   Piled_Stem4to6_tonsAcre = Piled_Stem4to6 * Stem4to6_tonsAcre,
+                   Piled_Bark9Plus_tonsAcre = Piled_Bark9Plus * Bark9Plus_tonsAcre,
+                   Piled_Bark6to9_tonsAcre = Piled_Bark6to9 * Bark6to9_tonsAcre,
+                   Piled_Bark4to6_tonsAcre = Piled_Bark4to6 * Bark4to6_tonsAcre,
+                   Piled_Branch_tonsAcre = Piled_Branch * Branch_tonsAcre,
+                   Piled_Foliage_tonsAcre = Piled_Foliage * Foliage_tonsAcre,
+                   Scattered_Stem9Plus_tonsAcre = Scattered_Stem9Plus * Stem9Plus_tonsAcre,
+                   Scattered_Stem6to9_tonsAcre = Scattered_Stem6to9 * Stem6to9_tonsAcre,
+                   Scattered_Stem4to6_tonsAcre = Scattered_Stem4to6 * Stem4to6_tonsAcre,
+                   Scattered_Bark9Plus_tonsAcre = Scattered_Bark9Plus * Bark9Plus_tonsAcre,
+                   Scattered_Bark6to9_tonsAcre = Scattered_Bark6to9 * Bark6to9_tonsAcre,
+                   Scattered_Bark4to6_tonsAcre = Scattered_Bark4to6 * Bark4to6_tonsAcre,
+                   Scattered_Branch_tonsAcre = Scattered_Branch * Branch_tonsAcre,
+                   Scattered_Foliage_tonsAcre = Scattered_Foliage * Foliage_tonsAcre
+)]
+
+# Trim out the columns we no longer need. ###### REMOVING SLOPE FOR NOW ######
+study_area_FCID[,':='(Slope=NULL, Recovered_Stem9Plus = NULL, Stem9Plus_tonsAcre = NULL, Recovered_Stem6to9 = NULL, Stem6to9_tonsAcre = NULL, Recovered_Stem4to6 = NULL,
+                   Stem4to6_tonsAcre = NULL, Recovered_Bark9Plus = NULL, Bark9Plus_tonsAcre = NULL, Recovered_Bark6to9 = NULL, Bark6to9_tonsAcre = NULL,
+                   Recovered_Bark4to6 = NULL, Bark4to6_tonsAcre = NULL, Recovered_Branch = NULL, Branch_tonsAcre = NULL, Recovered_Foliage = NULL,
+                   Foliage_tonsAcre = NULL, Merchantable_Stem9Plus = NULL, Merchantable_Stem6to9 = NULL, Merchantable_Stem4to6 = NULL,  Merchantable_Bark9Plus = NULL,
+                   Merchantable_Bark6to9 = NULL, Merchantable_Bark4to6 = NULL, Merchantable_Branch = NULL, Merchantable_Foliage = NULL, Piled_Stem9Plus = NULL, 
+                   Piled_Stem6to9 = NULL, Piled_Stem4to6 = NULL, Piled_Bark9Plus = NULL, Piled_Bark6to9 = NULL, Piled_Bark4to6 = NULL, Piled_Branch = NULL, Piled_Foliage = NULL,
+                   Scattered_Stem9Plus = NULL, Scattered_Stem6to9 = NULL, Scattered_Stem4to6 = NULL, Scattered_Bark9Plus = NULL, Scattered_Bark6to9 = NULL,
+                   Scattered_Bark4to6 = NULL, Scattered_Branch = NULL, Scattered_Foliage = NULL
+)]
+
+```
+
 Add wildfire data and emissions factors. These are stored in .rds files by tile; there are over 13,000 tiles. We need to load the tile data that overlaps with
 our study area, then the data needs to be cropped to match our study area exactly.
 
@@ -353,25 +348,13 @@ wildfire_data[,':='(CWD_UnburnedFrac = 1 - CWD_CombustionFrac - CWD_CharFrac,
 study_area_FCID <- wildfire_data[study_area_FCID]
 ```
 
-
 Column preparation for Burn/Decay/Wildfire Emissions
 ```{r}
-##########################################################################################################################################################
-# PRESCRIBED BURN HAPPENS BEFORE DECAY.
-# MASS IS REMOVED FROM PILED CATEGORIES DIRECTLY, exposed but unburned mass remains in the original column for exposure to wildfire/decay 
-##########################################################################################################################################################
-
-# The user input variable "burn_type" will specify the nature of the scenario: a value of "Pile Burn," "Broadcast Burn," or "Jackpot Burn" will be intentionally burned and then follow decay/wildfire, "None" will just follow decay/wildfire.
-
-# We will need to build out the code to perform a burn if we need to first, but for now let's build out the decay equations. I feel that will be the hard part.
-
 # Step 1: combine all mass categories into CWD, FWD, and foliage. There will also be a duff column, though this will start empty. 
 # There will be several categories with different decay rates - recovered, scattered (including merchantable breakage), field piled, and landing piled
 study_area_FCID[,':='(Recovered_CWD_tonsAcre = Recovered_Stem9Plus_tonsAcre + Recovered_Stem6to9_tonsAcre + Recovered_Stem4to6_tonsAcre + Recovered_Bark9Plus_tonsAcre + Recovered_Bark6to9_tonsAcre + Recovered_Bark4to6_tonsAcre,
                       Scattered_CWD_tonsAcre = Merchantable_Stem9Plus_tonsAcre + Merchantable_Stem6to9_tonsAcre + Merchantable_Stem4to6_tonsAcre + Merchantable_Bark9Plus_tonsAcre + Merchantable_Bark6to9_tonsAcre + Merchantable_Bark4to6_tonsAcre + Scattered_Stem9Plus_tonsAcre + Scattered_Stem6to9_tonsAcre + Scattered_Stem4to6_tonsAcre + Scattered_Bark9Plus_tonsAcre + Scattered_Bark6to9_tonsAcre + Scattered_Bark4to6_tonsAcre,
-                      LandingPiled_CWD_tonsAcre = 
-LandingPiled_Stem9Plus_tonsAcre + LandingPiled_Stem6to9_tonsAcre + LandingPiled_Stem4to6_tonsAcre + LandingPiled_Bark9Plus_tonsAcre + LandingPiled_Bark6to9_tonsAcre + LandingPiled_Bark4to6_tonsAcre,
-                      FieldPiled_CWD_tonsAcre = FieldPiled_Stem9Plus_tonsAcre + FieldPiled_Stem6to9_tonsAcre + FieldPiled_Stem4to6_tonsAcre + FieldPiled_Bark9Plus_tonsAcre + FieldPiled_Bark6to9_tonsAcre + FieldPiled_Bark4to6_tonsAcre + FieldPiled_Branch_tonsAcre + FieldPiled_Foliage_tonsAcre
+                      Piled_CWD_tonsAcre = Piled_Stem9Plus_tonsAcre + Piled_Stem6to9_tonsAcre + Piled_Stem4to6_tonsAcre + Piled_Bark9Plus_tonsAcre + Piled_Bark6to9_tonsAcre + Piled_Bark4to6_tonsAcre
 )]
 
 # Clear out old columns, as well as merchantable branch/foliage (which should've been empty anyway)
@@ -379,23 +362,18 @@ study_area_FCID[,':='(Recovered_Stem9Plus_tonsAcre = NULL, Recovered_Stem6to9_to
                       Recovered_Bark4to6_tonsAcre = NULL, Merchantable_Stem9Plus_tonsAcre = NULL, Merchantable_Stem6to9_tonsAcre = NULL, Merchantable_Stem4to6_tonsAcre = NULL, Merchantable_Bark9Plus_tonsAcre = NULL,
                       Merchantable_Bark6to9_tonsAcre = NULL, Merchantable_Bark4to6_tonsAcre = NULL, Merchantable_Branch_tonsAcre=NULL, Merchantable_Foliage_tonsAcre = NULL, Scattered_Stem9Plus_tonsAcre = NULL,
                       Scattered_Stem6to9_tonsAcre = NULL, Scattered_Stem4to6_tonsAcre = NULL, Scattered_Bark9Plus_tonsAcre = NULL, Scattered_Bark6to9_tonsAcre = NULL, Scattered_Bark4to6_tonsAcre = NULL,
-                      LandingPiled_Stem9Plus_tonsAcre = NULL, LandingPiled_Stem6to9_tonsAcre = NULL, LandingPiled_Stem4to6_tonsAcre = NULL, LandingPiled_Bark9Plus_tonsAcre = NULL, LandingPiled_Bark6to9_tonsAcre = NULL,
-                      LandingPiled_Bark4to6_tonsAcre = NULL, FieldPiled_Stem9Plus_tonsAcre = NULL,FieldPiled_Stem6to9_tonsAcre = NULL, FieldPiled_Stem4to6_tonsAcre = NULL, FieldPiled_Bark9Plus_tonsAcre = NULL,
-                      FieldPiled_Bark6to9_tonsAcre = NULL, FieldPiled_Bark4to6_tonsAcre = NULL
+                      Piled_Stem9Plus_tonsAcre = NULL, Piled_Stem6to9_tonsAcre = NULL, Piled_Stem4to6_tonsAcre = NULL, Piled_Bark9Plus_tonsAcre = NULL, Piled_Bark6to9_tonsAcre = NULL, Piled_Bark4to6_tonsAcre = NULL
 )]
 
 # FWD consists of branches, and foliage is obviously foliage. Just rename the columns.
 setnames(study_area_FCID,
-         c("Recovered_Branch_tonsAcre","LandingPiled_Branch_tonsAcre","FieldPiled_Branch_tonsAcre","Scattered_Branch_tonsAcre"),
-         c("Recovered_FWD_tonsAcre","LandingPiled_FWD_tonsAcre","FieldPiled_FWD_tonsAcre","Scattered_FWD_tonsAcre"))
+         c("Recovered_Branch_tonsAcre","Piled_Branch_tonsAcre","Scattered_Branch_tonsAcre"),
+         c("Recovered_FWD_tonsAcre","Piled_FWD_tonsAcre","Scattered_FWD_tonsAcre"))
 
-# Copy the residue columns for LandingPiled, FieldPiled, and Scattered residues. These will be the initial mass residues in Year 1. We will also need some blank columns to track material exposed to fire but left unburned.
-study_area_FCID[,':='(LandingPiled_CWD_tonsAcre_INITIAL = LandingPiled_CWD_tonsAcre,
-                      LandingPiled_FWD_tonsAcre_INITIAL = LandingPiled_FWD_tonsAcre,
-                      LandingPiled_Foliage_tonsAcre_INITIAL = LandingPiled_Foliage_tonsAcre,
-                      FieldPiled_CWD_tonsAcre_INITIAL = FieldPiled_CWD_tonsAcre,
-                      FieldPiled_FWD_tonsAcre_INITIAL = FieldPiled_FWD_tonsAcre,
-                      FieldPiled_Foliage_tonsAcre_INITIAL = FieldPiled_Foliage_tonsAcre,
+# Copy the residue columns for Piled and Scattered residues. These will be the initial mass residues in Year 1. We will also need some blank columns to track material exposed to fire but left unburned.
+study_area_FCID[,':='(Piled_CWD_tonsAcre_INITIAL = Piled_CWD_tonsAcre,
+                      Piled_FWD_tonsAcre_INITIAL = Piled_FWD_tonsAcre,
+                      Piled_Foliage_tonsAcre_INITIAL = Piled_Foliage_tonsAcre,
                       Scattered_CWD_tonsAcre_INITIAL = Scattered_CWD_tonsAcre,
                       Scattered_FWD_tonsAcre_INITIAL = Scattered_FWD_tonsAcre,
                       Scattered_Foliage_tonsAcre_INITIAL = Scattered_Foliage_tonsAcre
@@ -406,11 +384,6 @@ study_area_FCID[,':='(Duff_tonsAcre=0, decay_CWD_mass_year_i=0, decay_FWD_mass_y
                       fire_exposed_CWD_mass_year_i=0, fire_exposed_FWD_mass_year_i=0, fire_exposed_Foliage_mass_year_i=0, fire_exposed_Duff_mass_year_i=0,
                       prev_fired_CWD_mass=0, prev_fired_FWD_mass=0, prev_fired_Foliage_mass=0, prev_fired_Duff_mass=0)]
 
-# and mass emissions and charred material for years 1:100
-# study_area_FCID[,paste("Emissions_CO2_year_",seq(1,100),sep=""):=0]
-# study_area_FCID[,paste("Emissions_CH4_year_",seq(1,100),sep=""):=0]
-# study_area_FCID[,paste("char_year_",seq(1,100),sep=""):=0]
-
 century_emissions_profile <- data.table(CO2_tonnes=rep(0,100), CO_tonnes=rep(0,100), N2O_tonnes=rep(0,100), CH4_tonnes=rep(0,100), NOx_tonnes=rep(0,100), PMUnder10um_tonnes=rep(0,100), PMUnder2.5um_tonnes=rep(0,100), SOx_tonnes=rep(0,100), VOC_tonnes=rep(0,100), char_tonnes=rep(0,100))
 
 # Cycle through 100 years of emissions. Each year, we need to:
@@ -419,16 +392,17 @@ century_emissions_profile <- data.table(CO2_tonnes=rep(0,100), CO_tonnes=rep(0,1
 # 3) Update the dynamic residue mass
 # 4) Apply decay to the duff column, add emissions to emissions columns, and update duff mass.
 
-# Wildfire emissions will be calculated here alongside decay. We need to change how we track foliage - to - duff conversions; rather than existing mass vs initial (which would include fire loss), track when decay would bring us below the 50% threshold. NOTE TO ANDY: if you get the brilliant idea to track decay loss, this will not work - if (theoretically) 75% of the mass is lost to wildfire before it can decay, the transition to duff would never happen. Base the switch on the expected decay.
-# Also, apply all decay (including duff) before wildfire emissions.
-
 # Output should be a 100 row-X xolumn data table of combined emissions for study area by emissions type (i.e. decay, wildfire, other use....). See output template for more info.
 
 ```
 
 If our case involves biomass collection, transportation and equipment becomes an issue. This will involve more raster work, which will take a little time. So, let's skip it if biomass collection ain't happening.
 ```{r}
-if(user_inputs[variable=="biomass_collection",value]) {
+if(user_inputs[variable=="biomass_collection",value]!="No") {
+  
+  #######################################################################################################################################
+  # Determine specific travel distances - cell to road, then road to plant.
+  #######################################################################################################################################
   
   # Load the cell to road raster. Be sure to trim to the study area, or we may hit memory problems.
   cell_to_road_raster <- raster(user_inputs[variable=="cell_to_road_dist_filepath",value])
@@ -443,14 +417,12 @@ if(user_inputs[variable=="biomass_collection",value]) {
   # Convert the meters to miles; eliminate meters
   cell_to_road[,CellToRoadDist_miles := CellToRoadDist_meters * 0.000621371]
   cell_to_road[,CellToRoadDist_meters := NULL]
-  beep(5)
 
   # Combine with studay_area_FCID. This first requires rounding coordinates to the nearest tenth.
   cell_to_road[,':='(x=round(x,digits=1),y=round(y,digits=1))]
   setkey(cell_to_road,x,y)
   study_area_FCID <- cell_to_road[study_area_FCID]
-  beep(5)
-  
+
   # Repeat for the road to plant raster. Trim to the study area, or we may hit memory problems.
   road_to_plant_raster <- raster(user_inputs[variable=="road_to_plant_dist_filepath",value])
   road_to_plant_raster <- crop(road_to_plant_raster,extent(study_area_mask))
@@ -458,7 +430,9 @@ if(user_inputs[variable=="biomass_collection",value]) {
   
   road_to_plant <- as.data.frame(road_to_plant_raster,xy=T)
   
-  # Thje transportation rasters are compressed, so as.data.frame will get all coordinates, but lose much of the data. This line gets it back.
+  beep(5)
+  
+  # The transportation rasters are compressed, so as.data.frame will get all coordinates, but lose much of the data. This line gets it back.
   road_to_plant$RoadToPlant_miles <- road_to_plant_raster[] %>% as.double()
   
   # Trim uneeded columns, convert to data frame.
@@ -473,20 +447,35 @@ if(user_inputs[variable=="biomass_collection",value]) {
   road_to_plant[,plant_location:=user_inputs[variable=="power_plant_location",value]]
   study_area_FCID <- road_to_plant[study_area_FCID]
   
+  # Combine cell-to-road and road-to-plant miles, and then trim the old columns
+  study_area_FCID[,TotalRoad_miles := RoadToPlant_miles + CellToRoadDist_miles]
+  study_area_FCID[,':='(RoadToPlant_miles = NULL, CellToRoadDist_miles = NULL)]
+  
   # Now to determine equipment. This will vary depending on whther the harvest is high or low volume; this will be determined through average cell residue density
 
-  ###################
-  # Assume 5% mass loss at landing for processing, regardless of processing equipment. This is left to decay or be exposed to wildfire.
-  # Build something similar for transportation losses, value currently at 0%.
-  ###################
-  
+  #######################################################################################################################################
+  # Calculate harvest/processing emissions, and adjust mass totals.
+  #######################################################################################################################################
   high_volume_cell_threshold_density <- 13 # BDT/scre; remember that tons/acre is the unit for all of our residues.
-  processing_mass_loss <- 0.05 # % of mass lost during processing; assumed constant for all equipment.
-  study_area_FCID <- harvest_processing_fun(study_area_FCID, high_volume_cell_threshold_density,processing_mass_loss)
+  processing_mass_loss <- 0.05 # % of mass lost during processing; assumed constant for all equipment. Unprocessed mass is left to decay or be exposed to wildfire.
+  # WE STILL WANT TO DO THE BELOW NOTE?
+  # Build something similar to processing mass loss for transportation losses, value currently at 0%.
   
+  harvest_processing_output <- harvest_processing_fun(study_area_FCID, high_volume_cell_threshold_density,processing_mass_loss)
+  harvest_processing_emissions <- harvest_processing_output[[1]]
+  study_area_FCID <- harvest_processing_output[[2]]
   
+  #######################################################################################################################################
+  # Calculate power plant emissions.
+  #######################################################################################################################################
+  power_emission_factors <- data.table(read.csv(user_inputs[variable=='power_plant_emissions_filepath',value]))
+  
+  if(user_inputs[variable=='power_plant_location',value]=='Nearest') { # Multiple potential power plant locations
+    power_plant_emissions <- power_plant_fun(study_area_FCID, power_emission_factors, unique(study_area_FCID[,plant_location]))
+  } else { # Single power plant location
+    power_plant_emissions <- power_plant_fun(study_area_FCID, power_emission_factors, user_inputs[variable=='power_plant_location',value])
+  }
 }
-
 
 ```
 
@@ -501,27 +490,55 @@ Sys.time()
 for (year.i in 1:100) {
   print(year.i)
   
-  # A few things will happen only in year 1 (if at all): residues collection (and processing, transportations, and power plant use), and prescribed burning. 
+  # A few things will happen only in year 1 (if at all): residues collection (and processing, transportations, and power plant use), and prescribed burning.
+  # Harvesting, processing, transportation, and power plant emissions will have been addressed already, because there is an easy variable (biomass_collection)
   # Calculate emissions and mass loss from these activities before decay/wildfire. Note: they will affect different residue segments, so it does not matter 
   # if if prescribed burning or collection comes first.
   if(year.i==1) {
     
     # Make sure that the residue segment matches correctly with the prescribed burn method
     if(user_inputs[variable=='burn_type',value] == "Broadcast Burn") {
-       prescribed_burn_fun(study_area_FCID, "Scattered", user_inputs[variable=='burn_type',value], year.i)
+      prescribed_burn_output <- prescribed_burn_fun(study_area_FCID, "Scattered", user_inputs[variable=='burn_type',value], year.i)
+      prescribed_burn_emissions <- prescribed_burn_output[[1]]
+      study_area_FCID <- prescribed_burn_output[[2]]
     }
     if(user_inputs[variable=='burn_type',value] == "Pile Burn") {
-       prescribed_burn_fun(study_area_FCID, "LandingPiled", user_inputs[variable=='burn_type',value], year.i)
+      prescribed_burn_output <- prescribed_burn_fun(study_area_FCID, "Piled", user_inputs[variable=='burn_type',value], year.i)
+      prescribed_burn_emissions <- prescribed_burn_output[[1]]
+      study_area_FCID <- prescribed_burn_output[[2]]
+    }
+    if(user_inputs[variable=='burn_type',value] == "Pile and Broadcast Burn") {
+      prescribed_burn_output <- prescribed_burn_fun(study_area_FCID, "Piled", user_inputs[variable=='burn_type',value], year.i)
+      prescribed_burn_emissions <- prescribed_burn_output[[1]]
+      study_area_FCID <- prescribed_burn_output[[2]]
+      
+      prescribed_burn_output <- prescribed_burn_fun(study_area_FCID, "Scattered", user_inputs[variable=='burn_type',value], year.i)
+      prescribed_burn_emissions <- prescribed_burn_emissions + prescribed_burn_output[[1]]
+      study_area_FCID <- prescribed_burn_output[[2]]
     }
   }
   
-  # Calculate the total decayed mass. 
-  study_area_FCID <- decay_fun(study_area_FCID,residue.segment = "Scattered",year.i)
-  study_area_FCID <- decay_fun(study_area_FCID,residue.segment = "FieldPiled",year.i)
-  study_area_FCID <- decay_fun(study_area_FCID,residue.segment = "LandingPiled",year.i)
+  # Calculate the total decayed mass. "Previously Fired" must be a category; addressing previously fired material decay in each segment will run that decay 3 times over.
+  decay_output <- decay_fun(study_area_FCID,residue.segment = "Scattered",year.i)
+  decay_emissions <- decay_output[[1]]
+  study_area_FCID <- decay_output[[2]]
   
-  # Repeat for duff
-  study_area_FCID <- duff_decay_fun(study_area_FCID,year.i)
+  decay_output <- decay_fun(study_area_FCID,residue.segment = "Piled",year.i)
+  decay_emissions <- decay_emissions + decay_output[[1]]
+  study_area_FCID <- decay_output[[2]]
+  
+  decay_output <- decay_fun(study_area_FCID,residue.segment = "Recovered",year.i)
+  decay_emissions <- decay_emissions + decay_output[[1]]
+  study_area_FCID <- decay_output[[2]]
+  
+  decay_output <- decay_fun(study_area_FCID,residue.segment = "prev_fired",year.i)
+  decay_emissions <- decay_emissions + decay_output[[1]]
+  study_area_FCID <- decay_output[[2]]
+  
+  # Repeat for duff. Because we only run duff decay once, we can address both previously fired and non-fired duff.
+  decay_output <- duff_decay_fun(study_area_FCID,year.i)
+  decay_emissions <- decay_emissions + decay_output[[1]]
+  study_area_FCID <- decay_output[[2]]
   
   # Address wildfire emissions and mass loss. 
   ##############################################################################################################
@@ -529,767 +546,24 @@ for (year.i in 1:100) {
   # CONFIRM THAT DUFF COMBUSTION RATE IS THE SAME AS THE FOLIAGE COMBUSTION RATE
   ##############################################################################################################
   ############################################################################################################## 
-  study_area_FCID <- annual_wildfire_fun(study_area_FCID,residue.segment = "Scattered",year.i)
-  study_area_FCID <- annual_wildfire_fun(study_area_FCID,residue.segment = "FieldPiled",year.i)
-  study_area_FCID <- annual_wildfire_fun(study_area_FCID,residue.segment = "LandingPiled",year.i)
+  wildfire_output <- annual_wildfire_fun(study_area_FCID,residue.segment = "Scattered",year.i)
+  wildfire_emissions <- wildfire_output[[1]]
+  study_area_FCID <- wildfire_output[[2]]
   
-  study_area_FCID <- duff_annual_wildfire_fun(study_area_FCID,year.i)
+  wildfire_output <- annual_wildfire_fun(study_area_FCID,residue.segment = "Piled",year.i)
+  wildfire_emissions <- wildfire_emissions + wildfire_output[[1]]
+  study_area_FCID <- wildfire_output[[2]]
+  
+  wildfire_output <- annual_wildfire_fun(study_area_FCID,residue.segment = "Recovered",year.i)
+  wildfire_emissions <- wildfire_emissions + wildfire_output[[1]]
+  study_area_FCID <- wildfire_output[[2]]
+  
+  wildfire_output <- duff_annual_wildfire_fun(study_area_FCID,year.i)
+  wildfire_emissions <- wildfire_emissions + wildfire_output[[1]]
+  study_area_FCID <- wildfire_output[[2]]
   
 }
 Sys.time()
-```
-
-Speed test. If we remove the 200 emissions and char columns, does this shit speed up?
-
-```{r}
-##########################################################################################################################################################
-# PRESCRIBED BURN HAPPENS BEFORE DECAY.
-# MASS IS REMOVED FROM PILED CATEGORIES DIRECTLY, exposed but unburned mass remains in the original column for exposure to wildfire/decay 
-##########################################################################################################################################################
-
-# The user input variable "burn_type" will specify the nature of the scenario: a value of "Pile Burn," "Broadcast Burn," or "Jackpot Burn" will be intentionally burned and then follow decay/wildfire, "None" will just follow decay/wildfire.
-
-# We will need to build out the code to perform a burn if we need to first, but for now let's build out the decay equations. I feel that will be the hard part.
-
-# Step 1: combine all mass categories into CWD, FWD, and foliage. There will also be a duff column, though this will start empty. 
-# There will be several categories with different decay rates - recovered, scattered (including merchantable breakage), field piled, and landing piled
-study_area_FCID[,':='(Recovered_CWD_tonsAcre = Recovered_Stem9Plus_tonsAcre + Recovered_Stem6to9_tonsAcre + Recovered_Stem4to6_tonsAcre + Recovered_Bark9Plus_tonsAcre + Recovered_Bark6to9_tonsAcre + Recovered_Bark4to6_tonsAcre,
-                      Scattered_CWD_tonsAcre = Merchantable_Stem9Plus_tonsAcre + Merchantable_Stem6to9_tonsAcre + Merchantable_Stem4to6_tonsAcre + Merchantable_Bark9Plus_tonsAcre + Merchantable_Bark6to9_tonsAcre + Merchantable_Bark4to6_tonsAcre + Scattered_Stem9Plus_tonsAcre + Scattered_Stem6to9_tonsAcre + Scattered_Stem4to6_tonsAcre + Scattered_Bark9Plus_tonsAcre + Scattered_Bark6to9_tonsAcre + Scattered_Bark4to6_tonsAcre,
-                      LandingPiled_CWD_tonsAcre = 
-LandingPiled_Stem9Plus_tonsAcre + LandingPiled_Stem6to9_tonsAcre + LandingPiled_Stem4to6_tonsAcre + LandingPiled_Bark9Plus_tonsAcre + LandingPiled_Bark6to9_tonsAcre + LandingPiled_Bark4to6_tonsAcre,
-                      FieldPiled_CWD_tonsAcre = FieldPiled_Stem9Plus_tonsAcre + FieldPiled_Stem6to9_tonsAcre + FieldPiled_Stem4to6_tonsAcre + FieldPiled_Bark9Plus_tonsAcre + FieldPiled_Bark6to9_tonsAcre + FieldPiled_Bark4to6_tonsAcre + FieldPiled_Branch_tonsAcre + FieldPiled_Foliage_tonsAcre
-)]
-
-# Clear out old columns, as well as merchantable branch/foliage (which should've been empty anyway)
-study_area_FCID[,':='(Recovered_Stem9Plus_tonsAcre = NULL, Recovered_Stem6to9_tonsAcre = NULL, Recovered_Stem4to6_tonsAcre = NULL, Recovered_Bark9Plus_tonsAcre = NULL, Recovered_Bark6to9_tonsAcre = NULL, 
-                      Recovered_Bark4to6_tonsAcre = NULL, Merchantable_Stem9Plus_tonsAcre = NULL, Merchantable_Stem6to9_tonsAcre = NULL, Merchantable_Stem4to6_tonsAcre = NULL, Merchantable_Bark9Plus_tonsAcre = NULL,
-                      Merchantable_Bark6to9_tonsAcre = NULL, Merchantable_Bark4to6_tonsAcre = NULL, Merchantable_Branch_tonsAcre=NULL, Merchantable_Foliage_tonsAcre = NULL, Scattered_Stem9Plus_tonsAcre = NULL,
-                      Scattered_Stem6to9_tonsAcre = NULL, Scattered_Stem4to6_tonsAcre = NULL, Scattered_Bark9Plus_tonsAcre = NULL, Scattered_Bark6to9_tonsAcre = NULL, Scattered_Bark4to6_tonsAcre = NULL,
-                      LandingPiled_Stem9Plus_tonsAcre = NULL, LandingPiled_Stem6to9_tonsAcre = NULL, LandingPiled_Stem4to6_tonsAcre = NULL, LandingPiled_Bark9Plus_tonsAcre = NULL, LandingPiled_Bark6to9_tonsAcre = NULL,
-                      LandingPiled_Bark4to6_tonsAcre = NULL, FieldPiled_Stem9Plus_tonsAcre = NULL,FieldPiled_Stem6to9_tonsAcre = NULL, FieldPiled_Stem4to6_tonsAcre = NULL, FieldPiled_Bark9Plus_tonsAcre = NULL,
-                      FieldPiled_Bark6to9_tonsAcre = NULL, FieldPiled_Bark4to6_tonsAcre = NULL
-)]
-
-# FWD consists of branches, and foliage is obviously foliage. Just rename the columns.
-setnames(study_area_FCID,
-         c("Recovered_Branch_tonsAcre","LandingPiled_Branch_tonsAcre","FieldPiled_Branch_tonsAcre","Scattered_Branch_tonsAcre"),
-         c("Recovered_FWD_tonsAcre","LandingPiled_FWD_tonsAcre","FieldPiled_FWD_tonsAcre","Scattered_FWD_tonsAcre"))
-
-# Copy the residue columns for LandingPiled, FieldPiled, and Scattered residues. These will be the initial mass residues in Year 1. We will also need some blank columns to track material exposed to fire but left unburned.
-study_area_FCID[,':='(LandingPiled_CWD_tonsAcre_INITIAL = LandingPiled_CWD_tonsAcre,
-                      LandingPiled_FWD_tonsAcre_INITIAL = LandingPiled_FWD_tonsAcre,
-                      LandingPiled_Foliage_tonsAcre_INITIAL = LandingPiled_Foliage_tonsAcre,
-                      FieldPiled_CWD_tonsAcre_INITIAL = FieldPiled_CWD_tonsAcre,
-                      FieldPiled_FWD_tonsAcre_INITIAL = FieldPiled_FWD_tonsAcre,
-                      FieldPiled_Foliage_tonsAcre_INITIAL = FieldPiled_Foliage_tonsAcre,
-                      Scattered_CWD_tonsAcre_INITIAL = Scattered_CWD_tonsAcre,
-                      Scattered_FWD_tonsAcre_INITIAL = Scattered_FWD_tonsAcre,
-                      Scattered_Foliage_tonsAcre_INITIAL = Scattered_Foliage_tonsAcre
-                      )]
-
-# Make columns for duff, mass previously exposed to fire but unburnt, and year.i columns. If space becomes an issue, we can create/delete year.i column in the decay function, but I;m guessing that will hit our speed.
-study_area_FCID[,':='(Duff_tonsAcre=0, 
-                      Scattered_decay_CWD_mass_year_i=0, FieldPiled_decay_CWD_mass_year_i=0, LandingPiled_decay_CWD_mass_year_i=0,
-                      Scattered_decay_FWD_mass_year_i=0, FieldPiled_decay_FWD_mass_year_i=0, LandingPiled_decay_FWD_mass_year_i=0, 
-                      Scattered_decay_Foliage_mass_year_i=0, FieldPiled_decay_Foliage_mass_year_i=0, LandingPiled_decay_Foliage_mass_year_i=0,
-                      
-                      Scattered_fire_exposed_CWD_mass_year_i=0, FieldPiled_fire_exposed_CWD_mass_year_i=0, LandingPiled_fire_exposed_CWD_mass_year_i=0, 
-                      Scattered_fire_exposed_FWD_mass_year_i=0, FieldPiled_fire_exposed_FWD_mass_year_i=0, LandingPiled_fire_exposed_FWD_mass_year_i=0, 
-                      Scattered_fire_exposed_Foliage_mass_year_i=0, FieldPiled_fire_exposed_Foliage_mass_year_i=0, LandingPiled_fire_exposed_Foliage_mass_year_i=0, 
-                      fire_exposed_Duff_mass_year_i=0,
-                      
-                      Scattered_prev_fired_CWD_mass=0, FieldPiled_prev_fired_CWD_mass=0, LandingPiled_prev_fired_CWD_mass=0, 
-                      Scattered_prev_fired_FWD_mass=0, FieldPiled_prev_fired_FWD_mass=0, LandingPiled_prev_fired_FWD_mass=0, 
-                      Scattered_prev_fired_Foliage_mass=0, FieldPiled_prev_fired_Foliage_mass=0, LandingPiled_prev_fired_Foliage_mass=0, 
-                      prev_fired_Duff_mass=0)]
-
-# and mass emissions and charred material for years 1:100
-# RENAME THESE COLUMNS, FOR THE LOVE OF GOD.
-study_area_FCID[,':='(cumulative_emissions = 0, cumulative_char = 0)]
-
-# Cycle through 100 years of emissions. Each year, we need to:
-# 1) Calculate the mass lost in year i
-# 2) Use the mass lost to atmosphere/duff ratios to calculate the mass lost to duff and atmosphere
-# 3) Update the dynamic residue mass
-# 4) Apply decay to the duff column, add emissions to emissions columns, and update duff mass.
-
-# Repeat for Scattered, LandingPiled, and FieldPiled
-# residue.segments <- c("Scattered","FieldPiled","LandingPiled","Recovered")
-
-# Wildfire emissions will be calculated here alongside decay. We need to change how we track foliage - to - duff conversions; rather than existing mass vs initial (which would include fire loss), track when decay would bring us below the 50% threshold. NOTE TO ANDY: if you get the brilliant idea to track decay loss, this will not work - if (theoretically) 75% of the mass is lost to wildfire before it can decay, the transition to duff would never happen. Base the switch on the expected decay.
-# Also, apply all decay (including duff) before wildfire emissions.
-
-# Output should be a 100 row-X xolumn data table of combined emissions for study area by emissions type (i.e. decay, wildfire, other use....). See output template for more info.
-
-```
-
-Only 1 emissions/char column, instead of 200. This would write out to a smaller dataset every year if it works.
-Run time: "2019-03-25 12:10:53 PDT" - "2019-03-25 12:46:46 PDT"
-
-Test 2: We need to run through all 100 years sequentially, because we need 100 years of data and eacgh year builds upon the last. However, we may be able to eliminate the residue segment loop, and I think this will speed shit up. 
-
-For reference: Single emissions/char columns, simultaneous residue segment calculations.
-```{r}
-Sys.time()
-for (year.i in 1:100) {
-  print(year.i)
-
-  # A few things will happen only in year 1 (if at all): residues collection (and processing, transportations, and power plant use), and prescribed burning.
-  # Calculate emissions and mass loss from these activities before decay/wildfire. Note: they will affect different residue segments, so it does not matter
-  # if if prescribed burning or collection comes first.
-  if(year.i==1) {
-    prescribed.burn.combustion.frac <- 0.9
-    prescribed.burn.char.frac <- 0.01
-    ######################################################################################################################################################
-    ######################################################################################################################################################
-    # Currently, we are assuming that 100% of appropriate residues are exposed to prescribed burns. Not all will burn to completion, but all is exposed.
-    # Also, we assume the combustion/char/unburned fractions for pile burns are fixed (and can be hard-coded) at 90% / 1% / 9%.
-    ######################################################################################################################################################
-    ######################################################################################################################################################
-    
-    # Function for collection emissions goes HERE.
-
-    # The prescribed burn will affect different residue segments depending on the burn type.
-    if(user_inputs[variable=='burn_type',value] == "Broadcast Burn") {
-      # Broadcast burn: scattered residues. They burn at the same ratios as wildfire.
-      study_area_FCID[,cumulative_emissions := cumulative_emissions +
-                       CWD_CombustionFrac * Scattered_CWD_tonsAcre +
-                       FWD_CombustionFrac * Scattered_FWD_tonsAcre +
-                       Foliage_CombustionFrac * Scattered_Foliage_tonsAcre]
-
-      # Next, char
-      study_area_FCID[,cumulative_char := cumulative_char +
-                       CWD_CharFrac * Scattered_CWD_tonsAcre +
-                       FWD_CharFrac * Scattered_FWD_tonsAcre +
-                       Foliage_CharFrac * Scattered_Foliage_tonsAcre]
-
-      # Apply the mass lost to the dynamic mass columns.
-      study_area_FCID[,':='(Scattered_CWD_tonsAcre = (1 - CWD_CombustionFrac - CWD_CharFrac) * Scattered_CWD_tonsAcre, Scattered_FWD_tonsAcre = (1 - FWD_CombustionFrac - FWD_CharFrac) * Scattered_FWD_tonsAcre, Scattered_Foliage_tonsAcre = (1 - Foliage_CombustionFrac - Foliage_CharFrac) * Scattered_Foliage_tonsAcre)]
-    } 
-    
-    if(user_inputs[variable=='burn_type',value] == "Jackpot Burn") {
-      # Jackpot burn: field piled residues. Use prescribed burn fractions.
-      
-      # Any residue left unburnt can still be exposed to wildfire, so we can leave it in the original columns. Add combustion emissions to the emissions
-      # columns, and then adjust the dynamic mass column. Repeat for char.
-      # DUFF WILL NOT BE GENERATED YET, SO WE DON'T NEED TO WORRY ABOUT IT.
-      study_area_FCID[,cumulative_emissions := cumulative_emissions + prescribed.burn.combustion.frac * ( FieldPiled_CWD_tonsAcre + FieldPiled_FWD_tonsAcre + FieldPiled_Foliage_tonsAcre )]
-      study_area_FCID[,cumulative_char := cumulative_char + prescribed.burn.char.frac * ( FieldPiled_CWD_tonsAcre + FieldPiled_FWD_tonsAcre + FieldPiled_Foliage_tonsAcre )]
-
-      # Apply the mass lost to the dynamic mass columns.
-      study_area_FCID[,FieldPiled_CWD_tonsAcre := (1 - prescribed.burn.combustion.frac - prescribed.burn.char.frac) * FieldPiled_CWD_tonsAcre]
-      study_area_FCID[,FieldPiled_FWD_tonsAcre := (1 - prescribed.burn.combustion.frac - prescribed.burn.char.frac) * FieldPiled_FWD_tonsAcre]
-      study_area_FCID[,FieldPiled_Foliage_tonsAcre := (1 - prescribed.burn.combustion.frac - prescribed.burn.char.frac) * FieldPiled_Foliage_tonsAcre]
-    }
-    
-    if(user_inputs[variable=='burn_type',value] == "Pile Burn") {
-      # Pile burn: landing piled residues. Use prescribed burn fractions.
-      
-      # Any residue left unburnt can still be exposed to wildfire, so we can leave it in the original columns. Add combustion emissions to the emissions
-      # columns, and then adjust the dynamic mass column. Repeat for char.
-      # DUFF WILL NOT BE GENERATED YET, SO WE DON'T NEED TO WORRY ABOUT IT.
-      study_area_FCID[,cumulative_emissions := cumulative_emissions + prescribed.burn.combustion.frac * ( LandingPiled_CWD_tonsAcre + LandingPiled_FWD_tonsAcre + LandingPiled_Foliage_tonsAcre )]
-      study_area_FCID[,cumulative_char := cumulative_char + prescribed.burn.char.frac * ( LandingPiled_CWD_tonsAcre + LandingPiled_FWD_tonsAcre + LandingPiled_Foliage_tonsAcre )]
-
-      # Apply the mass lost to the dynamic mass columns.
-      study_area_FCID[,LandingPiled_CWD_tonsAcre := (1 - prescribed.burn.combustion.frac - prescribed.burn.char.frac) * LandingPiled_CWD_tonsAcre]
-      study_area_FCID[,LandingPiled_FWD_tonsAcre := (1 - prescribed.burn.combustion.frac - prescribed.burn.char.frac) * LandingPiled_FWD_tonsAcre]
-      study_area_FCID[,LandingPiled_Foliage_tonsAcre := (1 - prescribed.burn.combustion.frac - prescribed.burn.char.frac) * LandingPiled_Foliage_tonsAcre]
-    }
-  }
-
-  # Calculate the total decayed mass. Residue collection efficiency is baked into the scenario matrix, and will have already been applied to the "Recovered" columns. So, all residue in the "recovered" columns will have been removed by this point, and we can ignore them.
-  study_area_FCID[,':='(Scattered_decay_CWD_mass_year_i = one_year_decay_fun(Scattered_CWD_tonsAcre,CWD_cm,year.i),
-                        FieldPiled_decay_CWD_mass_year_i = one_year_decay_fun(FieldPiled_CWD_tonsAcre,CWD_cm,year.i),
-                        LandingPiled_decay_CWD_mass_year_i = one_year_decay_fun(LandingPiled_CWD_tonsAcre,CWD_cm,year.i),
-                        
-                        Scattered_decay_FWD_mass_year_i = one_year_decay_fun(Scattered_FWD_tonsAcre,FWD_cm,year.i),
-                        FieldPiled_decay_FWD_mass_year_i = one_year_decay_fun(FieldPiled_FWD_tonsAcre,FWD_cm,year.i),
-                        LandingPiled_decay_FWD_mass_year_i = one_year_decay_fun(LandingPiled_FWD_tonsAcre,FWD_cm,year.i),
-                        
-                        Scattered_decay_Foliage_mass_year_i = one_year_decay_fun(Scattered_Foliage_tonsAcre,Foliage_cm,year.i),
-                        FieldPiled_decay_Foliage_mass_year_i = one_year_decay_fun(FieldPiled_Foliage_tonsAcre,Foliage_cm,year.i),
-                        LandingPiled_decay_Foliage_mass_year_i = one_year_decay_fun(LandingPiled_Foliage_tonsAcre,Foliage_cm,year.i),
-                        
-                        Scattered_prev_fired_decay_CWD_mass_year_i = one_year_decay_fun(Scattered_prev_fired_CWD_mass,CWD_cm,year.i),
-                        FieldPiled_prev_fired_decay_CWD_mass_year_i = one_year_decay_fun(FieldPiled_prev_fired_CWD_mass,CWD_cm,year.i),
-                        LandingPiled_prev_fired_decay_CWD_mass_year_i = one_year_decay_fun(LandingPiled_prev_fired_CWD_mass,CWD_cm,year.i),
-                        
-                        Scattered_prev_fired_decay_FWD_mass_year_i = one_year_decay_fun(Scattered_prev_fired_FWD_mass,FWD_cm,year.i),
-                        FieldPiled_prev_fired_decay_FWD_mass_year_i = one_year_decay_fun(FieldPiled_prev_fired_FWD_mass,FWD_cm,year.i),
-                        LandingPiled_prev_fired_decay_FWD_mass_year_i = one_year_decay_fun(LandingPiled_prev_fired_FWD_mass,FWD_cm,year.i),
-                        
-                        Scattered_prev_fired_decay_Foliage_mass_year_i = one_year_decay_fun(Scattered_prev_fired_Foliage_mass,Foliage_cm,year.i),
-                        FieldPiled_prev_fired_decay_Foliage_mass_year_i = one_year_decay_fun(FieldPiled_prev_fired_Foliage_mass,Foliage_cm,year.i),
-                        LandingPiled_prev_fired_decay_Foliage_mass_year_i = one_year_decay_fun(LandingPiled_prev_fired_Foliage_mass,Foliage_cm,year.i),
-                        
-                        decay_Foliage_cumfrac = multi_year_decay_fun(1,Foliage_cm,year.i))]
-
-  # Calculate mass converted to duff, and populate the duff mass column
-  study_area_FCID[,Duff_tonsAcre := Duff_tonsAcre + duff_decay_mass_fraction * (Scattered_decay_CWD_mass_year_i + FieldPiled_decay_CWD_mass_year_i + LandingPiled_decay_CWD_mass_year_i + 
-                                                                                Scattered_decay_FWD_mass_year_i + FieldPiled_decay_FWD_mass_year_i + LandingPiled_decay_FWD_mass_year_i +
-                                                                                Scattered_decay_Foliage_mass_year_i + FieldPiled_decay_Foliage_mass_year_i + LandingPiled_decay_Foliage_mass_year_i)]
-
-  # Repeat for the fire exposed but unburned mass.
-  study_area_FCID[,prev_fired_Duff_mass := prev_fired_Duff_mass + duff_decay_mass_fraction * (Scattered_prev_fired_decay_CWD_mass_year_i + FieldPiled_prev_fired_decay_CWD_mass_year_i + LandingPiled_prev_fired_decay_CWD_mass_year_i +
-                                                                                              Scattered_prev_fired_decay_FWD_mass_year_i + FieldPiled_prev_fired_decay_FWD_mass_year_i + LandingPiled_prev_fired_decay_FWD_mass_year_i +
-                                                                                              Scattered_prev_fired_decay_Foliage_mass_year_i + FieldPiled_prev_fired_decay_Foliage_mass_year_i + LandingPiled_prev_fired_decay_Foliage_mass_year_i)]
-
-  # Apply the mass lost to the dynamic mass columns.
-  study_area_FCID[,':='(Scattered_CWD_tonsAcre = Scattered_CWD_tonsAcre - Scattered_decay_CWD_mass_year_i,
-                        FieldPiled_CWD_tonsAcre = FieldPiled_CWD_tonsAcre - FieldPiled_decay_CWD_mass_year_i,
-                        LandingPiled_CWD_tonsAcre = LandingPiled_CWD_tonsAcre - LandingPiled_decay_CWD_mass_year_i,
-                        
-                        Scattered_FWD_tonsAcre = Scattered_FWD_tonsAcre - Scattered_decay_FWD_mass_year_i,
-                        FieldPiled_FWD_tonsAcre = FieldPiled_FWD_tonsAcre - FieldPiled_decay_FWD_mass_year_i,
-                        LandingPiled_FWD_tonsAcre = LandingPiled_FWD_tonsAcre - LandingPiled_decay_FWD_mass_year_i,
-                        
-                        Scattered_Foliage_tonsAcre = Scattered_Foliage_tonsAcre - Scattered_decay_Foliage_mass_year_i,
-                        FieldPiled_Foliage_tonsAcre = FieldPiled_Foliage_tonsAcre - FieldPiled_decay_Foliage_mass_year_i,
-                        LandingPiled_Foliage_tonsAcre = LandingPiled_Foliage_tonsAcre - LandingPiled_decay_Foliage_mass_year_i)]
-
-  # Repeat for the fire exposed but unburned mass.
-  study_area_FCID[,':='(Scattered_prev_fired_CWD_mass = Scattered_prev_fired_CWD_mass - Scattered_prev_fired_decay_CWD_mass_year_i,
-                        FieldPiled_prev_fired_CWD_mass = FieldPiled_prev_fired_CWD_mass - FieldPiled_prev_fired_decay_CWD_mass_year_i,
-                        LandingPiled_prev_fired_CWD_mass = LandingPiled_prev_fired_CWD_mass - LandingPiled_prev_fired_decay_CWD_mass_year_i,
-                        
-                        Scattered_prev_fired_FWD_mass = Scattered_prev_fired_FWD_mass - Scattered_prev_fired_decay_FWD_mass_year_i,
-                        FieldPiled_prev_fired_FWD_mass = FieldPiled_prev_fired_FWD_mass - FieldPiled_prev_fired_decay_FWD_mass_year_i,
-                        LandingPiled_prev_fired_FWD_mass = LandingPiled_prev_fired_FWD_mass - LandingPiled_prev_fired_decay_FWD_mass_year_i,
-                        
-                        Scattered_prev_fired_Foliage_mass = Scattered_prev_fired_Foliage_mass - Scattered_prev_fired_decay_Foliage_mass_year_i,
-                        FieldPiled_prev_fired_Foliage_mass = FieldPiled_prev_fired_Foliage_mass - FieldPiled_prev_fired_decay_Foliage_mass_year_i,
-                        LandingPiled_prev_fired_Foliage_mass = LandingPiled_prev_fired_Foliage_mass - LandingPiled_prev_fired_decay_Foliage_mass_year_i)]
-
-  # Check if the foliage mass should be at least 1/2 decayed using decay_Foliage_cumfrac; if so, convert the rest of the foliage to duff.
-  study_area_FCID[decay_Foliage_cumfrac <= 0.5, Duff_tonsAcre := Duff_tonsAcre + Scattered_Foliage_tonsAcre + FieldPiled_Foliage_tonsAcre + LandingPiled_Foliage_tonsAcre]
-  study_area_FCID[decay_Foliage_cumfrac <= 0.5, ':='(Scattered_Foliage_tonsAcre = 0, FieldPiled_Foliage_tonsAcre = 0, LandingPiled_Foliage_tonsAcre = 0)]
-
-  # The unburned foliage would revert to duff as well.
-  study_area_FCID[decay_Foliage_cumfrac <= 0.5, prev_fired_Duff_mass := prev_fired_Duff_mass + Scattered_prev_fired_Foliage_mass + FieldPiled_prev_fired_Foliage_mass + LandingPiled_prev_fired_Foliage_mass]
-  study_area_FCID[decay_Foliage_cumfrac <= 0.5, ':='(Scattered_prev_fired_Foliage_mass = 0, FieldPiled_prev_fired_Foliage_mass = 0, LandingPiled_prev_fired_Foliage_mass = 0)]
-
-  # Calculate emissions
-  study_area_FCID[,cumulative_emissions := cumulative_emissions + (1-duff_decay_mass_fraction) * (Scattered_decay_CWD_mass_year_i + FieldPiled_decay_CWD_mass_year_i + LandingPiled_decay_CWD_mass_year_i + 
-                                                                                    Scattered_decay_FWD_mass_year_i + FieldPiled_decay_FWD_mass_year_i + LandingPiled_decay_FWD_mass_year_i +
-                                                                                    Scattered_decay_Foliage_mass_year_i + FieldPiled_decay_Foliage_mass_year_i + LandingPiled_decay_Foliage_mass_year_i)]
-
-  # Now decay duff, add emissions, and adjust mass totals
-  study_area_FCID[,cumulative_emissions := cumulative_emissions + one_year_decay_fun(Duff_tonsAcre,duff_k_val,year.i)]
-  study_area_FCID[,Duff_tonsAcre := Duff_tonsAcre - one_year_decay_fun(Duff_tonsAcre,duff_k_val,year.i)]
-
-  # Repeat emissions and duff decay for previously fired materials.
-  study_area_FCID[,cumulative_emissions := cumulative_emissions + (1-duff_decay_mass_fraction) * (Scattered_prev_fired_decay_CWD_mass_year_i + FieldPiled_prev_fired_decay_CWD_mass_year_i + LandingPiled_prev_fired_decay_CWD_mass_year_i +
-                                                                                    Scattered_prev_fired_decay_FWD_mass_year_i + FieldPiled_prev_fired_decay_FWD_mass_year_i + LandingPiled_prev_fired_decay_FWD_mass_year_i +
-                                                                                    Scattered_prev_fired_decay_Foliage_mass_year_i + FieldPiled_prev_fired_decay_Foliage_mass_year_i + LandingPiled_prev_fired_decay_Foliage_mass_year_i)]
-
-  # Duff decay - previously fired
-  study_area_FCID[,cumulative_emissions := cumulative_emissions + one_year_decay_fun(prev_fired_Duff_mass,duff_k_val,year.i)]
-  study_area_FCID[,prev_fired_Duff_mass := prev_fired_Duff_mass - one_year_decay_fun(prev_fired_Duff_mass,duff_k_val,year.i)]
-
-  # Address wildfire emissions and mass loss.
-  
-# Though wildfire will in reality strike one year and burn a large portion of residue, because wildfires are probabilistic, we model 
-# it as a series of annual, small wildfires, with the mass fraction of residues exposed to wildfire equal to the wildfire probability.
-# The first step is to determine the mass of residue exposed to wildfire using the residue mass and the MassExposedToWildfire fraction
-study_area_FCID[,':='(Scattered_fire_exposed_CWD_mass_year_i = Scattered_CWD_tonsAcre * MassExposedToWildfire,
-                      FieldPiled_fire_exposed_CWD_mass_year_i = FieldPiled_CWD_tonsAcre * MassExposedToWildfire,
-                      LandingPiled_fire_exposed_CWD_mass_year_i = LandingPiled_CWD_tonsAcre * MassExposedToWildfire,
-                      
-                      Scattered_fire_exposed_FWD_mass_year_i = Scattered_FWD_tonsAcre * MassExposedToWildfire,
-                      FieldPiled_fire_exposed_FWD_mass_year_i = FieldPiled_FWD_tonsAcre * MassExposedToWildfire,
-                      LandingPiled_fire_exposed_FWD_mass_year_i = LandingPiled_FWD_tonsAcre * MassExposedToWildfire,
-                      
-                      Scattered_fire_exposed_Foliage_mass_year_i = Scattered_Foliage_tonsAcre * MassExposedToWildfire,
-                      FieldPiled_fire_exposed_Foliage_mass_year_i = FieldPiled_Foliage_tonsAcre * MassExposedToWildfire,
-                      LandingPiled_fire_exposed_Foliage_mass_year_i = LandingPiled_Foliage_tonsAcre * MassExposedToWildfire,
-                      
-                      fire_exposed_Duff_mass_year_i = Duff_tonsAcre * MassExposedToWildfire)]
-
-# Apply the mass lost to the dynamic mass columns. 
-study_area_FCID[,':='(Scattered_CWD_tonsAcre = Scattered_CWD_tonsAcre - Scattered_fire_exposed_CWD_mass_year_i,
-                      FieldPiled_CWD_tonsAcre = FieldPiled_CWD_tonsAcre - FieldPiled_fire_exposed_CWD_mass_year_i,
-                      LandingPiled_CWD_tonsAcre = LandingPiled_CWD_tonsAcre - LandingPiled_fire_exposed_CWD_mass_year_i,
-                        
-                      Scattered_FWD_tonsAcre = Scattered_FWD_tonsAcre - Scattered_fire_exposed_FWD_mass_year_i,
-                      FieldPiled_FWD_tonsAcre = FieldPiled_FWD_tonsAcre - FieldPiled_fire_exposed_FWD_mass_year_i,
-                      LandingPiled_FWD_tonsAcre = LandingPiled_FWD_tonsAcre - LandingPiled_fire_exposed_FWD_mass_year_i,
-                        
-                      Scattered_Foliage_tonsAcre = Scattered_Foliage_tonsAcre - Scattered_fire_exposed_Foliage_mass_year_i,
-                      FieldPiled_Foliage_tonsAcre = FieldPiled_Foliage_tonsAcre - FieldPiled_fire_exposed_Foliage_mass_year_i,
-                      LandingPiled_Foliage_tonsAcre = LandingPiled_Foliage_tonsAcre - LandingPiled_fire_exposed_Foliage_mass_year_i,
-                      
-                      Duff_tonsAcre = Duff_tonsAcre - fire_exposed_Duff_mass_year_i)]
-  
-# The fraction of biomass exposed to wildfire will never be exposed again. Once exposed, biomass is either:
-# 1) Consumed by wildfire; the mass will be transferred to emissions 
-# 2) Charred; the mass will no longer decay.
-# 3) Left unburned, to decay normally. Previously exposed/unburned material will be decayed before this, and newly exposed/unburnt added below.
-  
-# Apply the mass from the fire exposed to each category, starting with emissions
-study_area_FCID[,cumulative_emissions := cumulative_emissions + 
-                                                  CWD_CombustionFrac * (Scattered_fire_exposed_CWD_mass_year_i + FieldPiled_fire_exposed_CWD_mass_year_i + LandingPiled_fire_exposed_CWD_mass_year_i) + 
-                                                  FWD_CombustionFrac * (Scattered_fire_exposed_FWD_mass_year_i + FieldPiled_fire_exposed_FWD_mass_year_i + LandingPiled_fire_exposed_FWD_mass_year_i) + 
-                                                  Foliage_CombustionFrac * (Scattered_fire_exposed_Foliage_mass_year_i + FieldPiled_fire_exposed_Foliage_mass_year_i + LandingPiled_fire_exposed_Foliage_mass_year_i) + 
-                                                  Foliage_CombustionFrac * fire_exposed_Duff_mass_year_i]
-  
-# Next, char
-study_area_FCID[,cumulative_char := cumulative_char + 
-                                        CWD_CharFrac * (Scattered_fire_exposed_CWD_mass_year_i + FieldPiled_fire_exposed_CWD_mass_year_i + LandingPiled_fire_exposed_CWD_mass_year_i) + 
-                                        FWD_CharFrac * (Scattered_fire_exposed_FWD_mass_year_i + FieldPiled_fire_exposed_FWD_mass_year_i + LandingPiled_fire_exposed_FWD_mass_year_i) + 
-                                        Foliage_CharFrac * (Scattered_fire_exposed_Foliage_mass_year_i + FieldPiled_fire_exposed_Foliage_mass_year_i + LandingPiled_fire_exposed_Foliage_mass_year_i) + 
-                                        Foliage_CharFrac * fire_exposed_Duff_mass_year_i]
-  
-# And the unburned
-study_area_FCID[,':='(Scattered_prev_fired_CWD_mass = Scattered_prev_fired_CWD_mass + (CWD_UnburnedFrac * Scattered_fire_exposed_CWD_mass_year_i),
-                      FieldPiled_prev_fired_CWD_mass = FieldPiled_prev_fired_CWD_mass + (CWD_UnburnedFrac * FieldPiled_fire_exposed_CWD_mass_year_i),
-                      LandingPiled_prev_fired_CWD_mass = LandingPiled_prev_fired_CWD_mass + (CWD_UnburnedFrac * LandingPiled_fire_exposed_CWD_mass_year_i),
-                      
-                      Scattered_prev_fired_FWD_mass = Scattered_prev_fired_FWD_mass + (FWD_UnburnedFrac * Scattered_fire_exposed_CWD_mass_year_i),
-                      FieldPiled_prev_fired_FWD_mass = FieldPiled_prev_fired_FWD_mass + (FWD_UnburnedFrac * FieldPiled_fire_exposed_CWD_mass_year_i),
-                      LandingPiled_prev_fired_FWD_mass = LandingPiled_prev_fired_FWD_mass + (FWD_UnburnedFrac * LandingPiled_fire_exposed_CWD_mass_year_i),
-                      
-                      Scattered_prev_fired_Foliage_mass = Scattered_prev_fired_Foliage_mass + (Foliage_UnburnedFrac * Scattered_fire_exposed_Foliage_mass_year_i),
-                      FieldPiled_prev_fired_Foliage_mass = FieldPiled_prev_fired_Foliage_mass + (Foliage_UnburnedFrac * FieldPiled_fire_exposed_Foliage_mass_year_i),
-                      LandingPiled_prev_fired_Foliage_mass = LandingPiled_prev_fired_Foliage_mass + (Foliage_UnburnedFrac * LandingPiled_fire_exposed_Foliage_mass_year_i),
-                      
-                      prev_fired_Duff_mass = prev_fired_Duff_mass + (Foliage_UnburnedFrac * fire_exposed_Duff_mass_year_i)
-                )]
-
-}
-# I think we need to re-set the duff for the new residue segment so duff does not get double-counted.
-study_area_FCID[,':='(Duff_tonsAcre = 0, prev_fired_Duff_mass = 0)]
-Sys.time()
-beep(8)
-```
-
- For reference: non-modular code, single cumulative emissions/char column, residue segment loop.
-```{r}
-#  Sys.time()
-# for (residue.segment in residue.segments) {
-#   print(residue.segment)
-#   for (year.i in 1:100) {
-#     print(year.i)
-# 
-#     # A few things will happen only in year 1 (if at all): residues collection (and processing, transportations, and power plant use), and prescribed burning.
-#     # Calculate emissions and mass loss from these activities before decay/wildfire. Note: they will affect different residue segments, so it does not matter
-#     # if if prescribed burning or collection comes first.
-#     if(year.i==1) {
-#       # Function for collection emissions goes HERE.
-# 
-# 
-#       # Make sure that the residue segment matches correctly with the prescribed burn method
-#       if( (residue.segment == "Scattered" & user_inputs[variable=='burn_type',value] == "Broadcast Burn") |
-#           (residue.segment == "FieldPiled" & user_inputs[variable=='burn_type',value] == "Jackpot Burn") |
-#           (residue.segment == "LandingPiled" & user_inputs[variable=='burn_type',value] == "Pile Burn") ) {
-#         # study_area_FCID <- prescribed_burn_fun(study_area_FCID, residue.segment, user_inputs[variable=='burn_type',value])
-#         # The prescribed burn will affect different residue segments depending on the burn type.
-#         if(user_inputs[variable=='burn_type',value] != "Broadcast Burn") {
-#           # Pile burning
-#           ######################################################################################################################################################
-#           ######################################################################################################################################################
-#           # Currently, we are assuming that 100% of appropriate residues are exposed to prescribed burns. Not all will burn to completion, but all is exposed.
-#           # Also, we assume the combustion/char/unburned fractions for pile burns are fixed (and can be hard-coded) at 90% / 1% / 9%.
-#           ######################################################################################################################################################
-#           ######################################################################################################################################################
-#           prescribed.burn.combustion.frac <- 0.9
-#           prescribed.burn.char.frac <- 0.01
-# 
-#           # Any residue left unburnt can still be exposed to wildfire, so we can leave it in the original columns. Add combustion emissions to the emissions
-#           # columns, and then adjust the dynamic mass column. Repeat for char.
-#           # DUFF WILL NOT BE GENERATED YET, SO WE DON'T NEED TO WORRY ABOUT IT.
-#           study_area_FCID[,cumulative_emissions := cumulative_emissions + prescribed.burn.combustion.frac * ( get(paste(residue.segment,"CWD_tonsAcre",sep="_")) + get(paste(residue.segment,"FWD_tonsAcre",sep="_")) + get(paste(residue.segment,"Foliage_tonsAcre",sep="_")) )]
-#           study_area_FCID[,cumulative_char := cumulative_char + prescribed.burn.char.frac * ( get(paste(residue.segment,"CWD_tonsAcre",sep="_")) + get(paste(residue.segment,"FWD_tonsAcre",sep="_")) + get(paste(residue.segment,"Foliage_tonsAcre",sep="_")) )]
-# 
-#           # Apply the mass lost to the dynamic mass columns.
-#           study_area_FCID[,(paste(residue.segment,"CWD_tonsAcre",sep="_")) := (1 - prescribed.burn.combustion.frac - prescribed.burn.char.frac) * get(paste(residue.segment,"CWD_tonsAcre",sep="_"))]
-#           study_area_FCID[,(paste(residue.segment,"FWD_tonsAcre",sep="_")) := (1 - prescribed.burn.combustion.frac - prescribed.burn.char.frac) * get(paste(residue.segment,"FWD_tonsAcre",sep="_"))]
-#           study_area_FCID[,(paste(residue.segment,"Foliage_tonsAcre",sep="_")) := (1 - prescribed.burn.combustion.frac - prescribed.burn.char.frac) * get(paste(residue.segment,"Foliage_tonsAcre",sep="_"))]
-#         } else {
-#           # Broadcast burns at the same ratios as wildfire.
-#           study_area_FCID[,cumulative_emissions := cumulative_emissions +
-#                            CWD_CombustionFrac * get(paste(residue.segment,"CWD_tonsAcre",sep="_")) +
-#                            FWD_CombustionFrac * get(paste(residue.segment,"FWD_tonsAcre",sep="_")) +
-#                            Foliage_CombustionFrac * get(paste(residue.segment,"Foliage_tonsAcre",sep="_"))]
-# 
-#           # Next, char
-#           study_area_FCID[,cumulative_char := cumulative_char +
-#                            CWD_CharFrac * get(paste(residue.segment,"CWD_tonsAcre",sep="_")) +
-#                            FWD_CharFrac * get(paste(residue.segment,"FWD_tonsAcre",sep="_")) +
-#                            Foliage_CharFrac * get(paste(residue.segment,"Foliage_tonsAcre",sep="_"))]
-# 
-#           # Apply the mass lost to the dynamic mass columns.
-#           study_area_FCID[,(paste(residue.segment,"CWD_tonsAcre",sep="_")) := (1 - CWD_CombustionFrac - CWD_CharFrac) * get(paste(residue.segment,"CWD_tonsAcre",sep="_"))]
-#           study_area_FCID[,(paste(residue.segment,"FWD_tonsAcre",sep="_")) := (1 - FWD_CombustionFrac - FWD_CharFrac) * get(paste(residue.segment,"FWD_tonsAcre",sep="_"))]
-#           study_area_FCID[,(paste(residue.segment,"Foliage_tonsAcre",sep="_")) := (1 - Foliage_CombustionFrac - Foliage_CharFrac) * get(paste(residue.segment,"Foliage_tonsAcre",sep="_"))]
-#         }
-#       }
-#     }
-# 
-#     # Calculate the total decayed mass
-#     study_area_FCID[,':='(decay_CWD_mass_year_i = one_year_decay_fun(get(paste(residue.segment,"CWD_tonsAcre",sep="_")),CWD_cm,year.i),
-#                           decay_FWD_mass_year_i = one_year_decay_fun(get(paste(residue.segment,"FWD_tonsAcre",sep="_")),FWD_cm,year.i),
-#                           decay_Foliage_mass_year_i = one_year_decay_fun(get(paste(residue.segment,"Foliage_tonsAcre",sep="_")),Foliage_cm,year.i),
-#                           prev_fired_decay_CWD_mass_year_i = one_year_decay_fun(prev_fired_CWD_mass,CWD_cm,year.i),
-#                           prev_fired_decay_FWD_mass_year_i = one_year_decay_fun(prev_fired_FWD_mass,FWD_cm,year.i),
-#                           prev_fired_decay_Foliage_mass_year_i = one_year_decay_fun(prev_fired_Foliage_mass,Foliage_cm,year.i),
-#                           decay_Foliage_cumfrac = multi_year_decay_fun(1,Foliage_cm,year.i))]
-# 
-#     # Calculate mass converted to duff, and populate the duff mass column
-#     study_area_FCID[,Duff_tonsAcre := Duff_tonsAcre + duff_decay_mass_fraction * (decay_CWD_mass_year_i + decay_FWD_mass_year_i + decay_Foliage_mass_year_i)]
-# 
-#     # Repeat for the fire exposed but unburned mass.
-#     study_area_FCID[,prev_fired_Duff_mass := prev_fired_Duff_mass + duff_decay_mass_fraction * (prev_fired_decay_CWD_mass_year_i + prev_fired_decay_FWD_mass_year_i + prev_fired_decay_Foliage_mass_year_i)]
-# 
-#     # Apply the mass lost to the dynamic mass columns.
-#     study_area_FCID[,(paste(residue.segment,"CWD_tonsAcre",sep="_")) := get(paste(residue.segment,"CWD_tonsAcre",sep="_")) - decay_CWD_mass_year_i]
-#     study_area_FCID[,(paste(residue.segment,"FWD_tonsAcre",sep="_")) := get(paste(residue.segment,"FWD_tonsAcre",sep="_")) - decay_FWD_mass_year_i]
-#     study_area_FCID[,(paste(residue.segment,"Foliage_tonsAcre",sep="_")) := get(paste(residue.segment,"Foliage_tonsAcre",sep="_")) - decay_Foliage_mass_year_i]
-# 
-#     # Repeat for the fire exposed but unburned mass.
-#     study_area_FCID[,':='(prev_fired_CWD_mass = prev_fired_CWD_mass - prev_fired_decay_CWD_mass_year_i,
-#                           prev_fired_FWD_mass = prev_fired_FWD_mass - prev_fired_decay_FWD_mass_year_i,
-#                           prev_fired_Foliage_mass = prev_fired_Foliage_mass - prev_fired_decay_Foliage_mass_year_i)]
-# 
-#     # Check if the foliage mass should be at least 1/2 decayed using decay_Foliage_cumfrac; if so, convert the rest of the foliage to duff.
-#     study_area_FCID[decay_Foliage_cumfrac <= 0.5, Duff_tonsAcre := Duff_tonsAcre + get(paste(residue.segment,"Foliage_tonsAcre",sep="_"))]
-#     study_area_FCID[decay_Foliage_cumfrac <= 0.5, paste(residue.segment,"Foliage_tonsAcre",sep="_") := 0]
-# 
-#     # The unburned foliage would revert to duff as well.
-#     study_area_FCID[decay_Foliage_cumfrac <= 0.5, prev_fired_Duff_mass := prev_fired_Duff_mass + prev_fired_Foliage_mass]
-#     study_area_FCID[decay_Foliage_cumfrac <= 0.5, prev_fired_Foliage_mass := 0]
-# 
-#     # Calculate emissions
-#     study_area_FCID[,cumulative_emissions := cumulative_emissions + (1-duff_decay_mass_fraction) * (decay_CWD_mass_year_i + decay_FWD_mass_year_i + decay_Foliage_mass_year_i)]
-# 
-#     # Now decay duff, add emissions, and adjust mass totals
-#     study_area_FCID[,cumulative_emissions := cumulative_emissions + one_year_decay_fun(Duff_tonsAcre,duff_k_val,year.i)]
-#     study_area_FCID[,Duff_tonsAcre := Duff_tonsAcre - one_year_decay_fun(Duff_tonsAcre,duff_k_val,year.i)]
-# 
-#     # Repeat emissions and duff decay for previously fired materials.
-#     study_area_FCID[,cumulative_emissions := cumulative_emissions + (1-duff_decay_mass_fraction) * (prev_fired_decay_CWD_mass_year_i + prev_fired_decay_FWD_mass_year_i + prev_fired_decay_Foliage_mass_year_i)]
-# 
-#     # Duff decay - previously fired
-#     study_area_FCID[,cumulative_emissions := cumulative_emissions + one_year_decay_fun(prev_fired_Duff_mass,duff_k_val,year.i)]
-#     study_area_FCID[,prev_fired_Duff_mass := prev_fired_Duff_mass - one_year_decay_fun(prev_fired_Duff_mass,duff_k_val,year.i)]
-# 
-#     # Address wildfire emissions and mass loss.
-#   
-#   # Though wildfire will in reality strike one year and burn a large portion of residue, because wildfires are probabilistic, we model 
-#   # it as a series of annual, small wildfires, with the mass fraction of residues exposed to wildfire equal to the wildfire probability.
-#   # The first step is to determine the mass of residue exposed to wildfire using the residue mass and the MassExposedToWildfire fraction
-#   study_area_FCID[,fire_exposed_CWD_mass_year_i := get(paste(residue.segment,"CWD_tonsAcre",sep="_")) * MassExposedToWildfire]
-#   study_area_FCID[,fire_exposed_FWD_mass_year_i := get(paste(residue.segment,"FWD_tonsAcre",sep="_")) * MassExposedToWildfire]
-#   study_area_FCID[,fire_exposed_Foliage_mass_year_i := get(paste(residue.segment,"Foliage_tonsAcre",sep="_")) * MassExposedToWildfire]
-#   study_area_FCID[,fire_exposed_Duff_mass_year_i := Duff_tonsAcre * MassExposedToWildfire]
-# 
-#   # Apply the mass lost to the dynamic mass columns. 
-#   study_area_FCID[,(paste(residue.segment,"CWD_tonsAcre",sep="_")) := get(paste(residue.segment,"CWD_tonsAcre",sep="_")) - fire_exposed_CWD_mass_year_i]
-#   study_area_FCID[,(paste(residue.segment,"FWD_tonsAcre",sep="_")) := get(paste(residue.segment,"FWD_tonsAcre",sep="_")) - fire_exposed_FWD_mass_year_i]
-#   study_area_FCID[,(paste(residue.segment,"Foliage_tonsAcre",sep="_")) := get(paste(residue.segment,"Foliage_tonsAcre",sep="_")) - fire_exposed_Foliage_mass_year_i]
-#   study_area_FCID[,Duff_tonsAcre := Duff_tonsAcre - fire_exposed_Duff_mass_year_i]
-#   
-#   # The fraction of biomass exposed to wildfire will never be exposed again. Once exposed, biomass is either:
-#   # 1) Consumed by wildfire; the mass will be transferred to emissions 
-#   # 2) Charred; the mass will no longer decay.
-#   # 3) Left unburned, to decay normally. Previously exposed/unburned material will be decayed before this, and newly exposed/unburnt added below.
-#   
-#   # Apply the mass from the fire exposed to each category, starting with emissions
-#   study_area_FCID[,cumulative_emissions := cumulative_emissions + 
-#                                                       CWD_CombustionFrac * fire_exposed_CWD_mass_year_i + 
-#                                                       FWD_CombustionFrac * fire_exposed_FWD_mass_year_i + 
-#                                                       Foliage_CombustionFrac * fire_exposed_Foliage_mass_year_i + 
-#                                                       Foliage_CombustionFrac * fire_exposed_Duff_mass_year_i]
-#   
-#   # Next, char
-#   study_area_FCID[,cumulative_char := cumulative_char + 
-#                                                  CWD_CharFrac * fire_exposed_CWD_mass_year_i + 
-#                                                  FWD_CharFrac * fire_exposed_FWD_mass_year_i + 
-#                                                  Foliage_CharFrac * fire_exposed_Foliage_mass_year_i + 
-#                                                  Foliage_CharFrac * fire_exposed_Duff_mass_year_i]
-#   
-#   # And the unburned
-#   study_area_FCID[,':='(prev_fired_CWD_mass = prev_fired_CWD_mass + (CWD_UnburnedFrac * fire_exposed_CWD_mass_year_i),
-#                  prev_fired_FWD_mass = prev_fired_FWD_mass + (FWD_UnburnedFrac * fire_exposed_FWD_mass_year_i),
-#                  prev_fired_Foliage_mass = prev_fired_Foliage_mass + (Foliage_UnburnedFrac * fire_exposed_Foliage_mass_year_i),
-#                  prev_fired_Duff_mass = prev_fired_Duff_mass + (Foliage_UnburnedFrac * fire_exposed_Duff_mass_year_i)
-#           )]
-# 
-#     
-#     
-#     ##############################################################################################################
-#     ##############################################################################################################
-#     # MICAH IS STILL WORKING ON WILDFIRE - WE MAY NEED TO ADJUST VARIABLE NAMES, OR POSSIBLY SOME MINOR DETAILS
-#     # OF THE APPROACH. SOME COLUMNS WERE CREATED BEFORE THE LOOP, BUT THE WILDFIRE SEGMENT STARTS HERE.
-#     ##############################################################################################################
-#     ##############################################################################################################
-# 
-#     # Though wildfire will in reality strike one year and burn a large portion of residue, because wildfires are probabilistic, we model
-#     # it as a series of annual, small wildfires, with the mass fraction of residues exposed to wildfire equal to the wildfire probability.
-#     # The first step is to determine the mass of residue exposed to wildfire using the residue mass and the MassExposedToWildfire fraction
-#     study_area_FCID[,fire_exposed_CWD_mass_year_i := get(paste(residue.segment,"CWD_tonsAcre",sep="_")) * MassExposedToWildfire]
-#     study_area_FCID[,fire_exposed_FWD_mass_year_i := get(paste(residue.segment,"FWD_tonsAcre",sep="_")) * MassExposedToWildfire]
-#     study_area_FCID[,fire_exposed_Foliage_mass_year_i := get(paste(residue.segment,"Foliage_tonsAcre",sep="_")) * MassExposedToWildfire]
-#     study_area_FCID[,fire_exposed_Duff_mass_year_i := Duff_tonsAcre * MassExposedToWildfire]
-# 
-#     # Apply the mass lost to the dynamic mass columns.
-#     study_area_FCID[,(paste(residue.segment,"CWD_tonsAcre",sep="_")) := get(paste(residue.segment,"CWD_tonsAcre",sep="_")) - fire_exposed_CWD_mass_year_i]
-#     study_area_FCID[,(paste(residue.segment,"FWD_tonsAcre",sep="_")) := get(paste(residue.segment,"FWD_tonsAcre",sep="_")) - fire_exposed_FWD_mass_year_i]
-#     study_area_FCID[,(paste(residue.segment,"Foliage_tonsAcre",sep="_")) := get(paste(residue.segment,"Foliage_tonsAcre",sep="_")) - fire_exposed_Foliage_mass_year_i]
-#     study_area_FCID[,Duff_tonsAcre := Duff_tonsAcre - fire_exposed_Duff_mass_year_i]
-# 
-#     # The fraction of biomass exposed to wildfire will never be exposed again. Once exposed, biomass is either:
-#     # 1) Consumed by wildfire; the mass will be transferred to emissions
-#     # 2) Charred; the mass will no longer decay.
-#     # 3) Left unburned, to decay normally. Previously exposed/unburned material will be decayed before this, and newly exposed/unburnt added below.
-# 
-#     # Apply the mass from the fire exposed to each category, starting with emissions
-#     study_area_FCID[,cumulative_emissions := cumulative_emissions +
-#                                                                CWD_CombustionFrac * fire_exposed_CWD_mass_year_i +
-#                                                                FWD_CombustionFrac * fire_exposed_FWD_mass_year_i +
-#                                                                Foliage_CombustionFrac * fire_exposed_Foliage_mass_year_i +
-#                                                                Foliage_CombustionFrac * fire_exposed_Duff_mass_year_i]
-# 
-#     # Next, char
-#     study_area_FCID[,cumulative_char := cumulative_char +
-#                                                           CWD_CharFrac * fire_exposed_CWD_mass_year_i +
-#                                                           FWD_CharFrac * fire_exposed_FWD_mass_year_i +
-#                                                           Foliage_CharFrac * fire_exposed_Foliage_mass_year_i +
-#                                                           Foliage_CharFrac * fire_exposed_Duff_mass_year_i]
-# 
-#     # And the unburned
-#     study_area_FCID[,':='(prev_fired_CWD_mass = prev_fired_CWD_mass + (CWD_UnburnedFrac * fire_exposed_CWD_mass_year_i),
-#                           prev_fired_FWD_mass = prev_fired_FWD_mass + (FWD_UnburnedFrac * fire_exposed_FWD_mass_year_i),
-#                           prev_fired_Foliage_mass = prev_fired_Foliage_mass + (Foliage_UnburnedFrac * fire_exposed_Foliage_mass_year_i),
-#                           prev_fired_Duff_mass = prev_fired_Duff_mass + (Foliage_UnburnedFrac * fire_exposed_Duff_mass_year_i)
-#                     )]
-# 
-#   }
-#   # I think we need to re-set the duff for the new residue segment so duff does not get double-counted.
-#   study_area_FCID[,':='(Duff_tonsAcre = 0, prev_fired_Duff_mass = 0)]
-# }
-# Sys.time()
-# beep(8)
-
-```
-
-For reference: Non-modular code, 100 emissions/char columns. "2019-03-22 14:19:17 PDT" to "2019-03-22 15:57:43 PDT". Not faster.
-```{r}
-# Sys.time()
-# for (residue.segment in residue.segments) {
-#   print(residue.segment)
-#   for (year.i in 1:100) {
-#     print(year.i)
-#     
-#     # A few things will happen only in year 1 (if at all): residues collection (and processing, transportations, and power plant use), and prescribed burning. 
-#     # Calculate emissions and mass loss from these activities before decay/wildfire. Note: they will affect different residue segments, so it does not matter 
-#     # if if prescribed burning or collection comes first.
-#     if(year.i==1) {
-#       # Function for collection emissions goes HERE.
-#       
-#       
-#       # Make sure that the residue segment matches correctly with the prescribed burn method
-#       if( (residue.segment == "Scattered" & user_inputs[variable=='burn_type',value] == "Broadcast Burn") | 
-#           (residue.segment == "FieldPiled" & user_inputs[variable=='burn_type',value] == "Jackpot Burn") |
-#           (residue.segment == "LandingPiled" & user_inputs[variable=='burn_type',value] == "Pile Burn") ) {
-#         # study_area_FCID <- prescribed_burn_fun(study_area_FCID, residue.segment, user_inputs[variable=='burn_type',value])
-#         # The prescribed burn will affect different residue segments depending on the burn type.
-#         if(user_inputs[variable=='burn_type',value] != "Broadcast Burn") {
-#           # Pile burning
-#           ######################################################################################################################################################
-#           ######################################################################################################################################################
-#           # Currently, we are assuming that 100% of appropriate residues are exposed to prescribed burns. Not all will burn to completion, but all is exposed.
-#           # Also, we assume the combustion/char/unburned fractions for pile burns are fixed (and can be hard-coded) at 90% / 1% / 9%.
-#           ######################################################################################################################################################
-#           ######################################################################################################################################################
-#           prescribed.burn.combustion.frac <- 0.9
-#           prescribed.burn.char.frac <- 0.01
-#           
-#           # Any residue left unburnt can still be exposed to wildfire, so we can leave it in the original columns. Add combustion emissions to the emissions 
-#           # columns, and then adjust the dynamic mass column. Repeat for char.
-#           # DUFF WILL NOT BE GENERATED YET, SO WE DON'T NEED TO WORRY ABOUT IT.
-#           study_area_FCID[,paste("Emissions_year_",year.i,sep='') := get(paste("Emissions_year_",year.i,sep='')) + prescribed.burn.combustion.frac * ( get(paste(residue.segment,"CWD_tonsAcre",sep="_")) + get(paste(residue.segment,"FWD_tonsAcre",sep="_")) + get(paste(residue.segment,"Foliage_tonsAcre",sep="_")) )]
-#           study_area_FCID[,paste("char_year_",year.i,sep='') := get(paste("char_year_",year.i,sep='')) + prescribed.burn.char.frac * ( get(paste(residue.segment,"CWD_tonsAcre",sep="_")) + get(paste(residue.segment,"FWD_tonsAcre",sep="_")) + get(paste(residue.segment,"Foliage_tonsAcre",sep="_")) )]
-#     
-#           # Apply the mass lost to the dynamic mass columns. 
-#           study_area_FCID[,(paste(residue.segment,"CWD_tonsAcre",sep="_")) := (1 - prescribed.burn.combustion.frac - prescribed.burn.char.frac) * get(paste(residue.segment,"CWD_tonsAcre",sep="_"))]
-#           study_area_FCID[,(paste(residue.segment,"FWD_tonsAcre",sep="_")) := (1 - prescribed.burn.combustion.frac - prescribed.burn.char.frac) * get(paste(residue.segment,"FWD_tonsAcre",sep="_"))]
-#           study_area_FCID[,(paste(residue.segment,"Foliage_tonsAcre",sep="_")) := (1 - prescribed.burn.combustion.frac - prescribed.burn.char.frac) * get(paste(residue.segment,"Foliage_tonsAcre",sep="_"))]
-#         } else {
-#           # Broadcast burns at the same ratios as wildfire.
-#           study_area_FCID[,paste("Emissions_year_",year.i,sep='') := get(paste("Emissions_year_",year.i,sep='')) + 
-#                            CWD_CombustionFrac * get(paste(residue.segment,"CWD_tonsAcre",sep="_")) + 
-#                            FWD_CombustionFrac * get(paste(residue.segment,"FWD_tonsAcre",sep="_")) + 
-#                            Foliage_CombustionFrac * get(paste(residue.segment,"Foliage_tonsAcre",sep="_"))]
-#           
-#           # Next, char
-#           study_area_FCID[,paste("char_year_",year.i,sep='') := get(paste("char_year_",year.i,sep='')) + 
-#                            CWD_CharFrac * get(paste(residue.segment,"CWD_tonsAcre",sep="_")) + 
-#                            FWD_CharFrac * get(paste(residue.segment,"FWD_tonsAcre",sep="_")) + 
-#                            Foliage_CharFrac * get(paste(residue.segment,"Foliage_tonsAcre",sep="_"))]
-#     
-#           # Apply the mass lost to the dynamic mass columns. 
-#           study_area_FCID[,(paste(residue.segment,"CWD_tonsAcre",sep="_")) := (1 - CWD_CombustionFrac - CWD_CharFrac) * get(paste(residue.segment,"CWD_tonsAcre",sep="_"))]
-#           study_area_FCID[,(paste(residue.segment,"FWD_tonsAcre",sep="_")) := (1 - FWD_CombustionFrac - FWD_CharFrac) * get(paste(residue.segment,"FWD_tonsAcre",sep="_"))]
-#           study_area_FCID[,(paste(residue.segment,"Foliage_tonsAcre",sep="_")) := (1 - Foliage_CombustionFrac - Foliage_CharFrac) * get(paste(residue.segment,"Foliage_tonsAcre",sep="_"))]
-#         }
-#       }
-#     }
-#       
-#     # Calculate the total decayed mass
-#     study_area_FCID[,':='(decay_CWD_mass_year_i = one_year_decay_fun(get(paste(residue.segment,"CWD_tonsAcre",sep="_")),CWD_cm,year.i),
-#                           decay_FWD_mass_year_i = one_year_decay_fun(get(paste(residue.segment,"FWD_tonsAcre",sep="_")),FWD_cm,year.i),
-#                           decay_Foliage_mass_year_i = one_year_decay_fun(get(paste(residue.segment,"Foliage_tonsAcre",sep="_")),Foliage_cm,year.i),
-#                           prev_fired_decay_CWD_mass_year_i = one_year_decay_fun(prev_fired_CWD_mass,CWD_cm,year.i),
-#                           prev_fired_decay_FWD_mass_year_i = one_year_decay_fun(prev_fired_FWD_mass,FWD_cm,year.i),
-#                           prev_fired_decay_Foliage_mass_year_i = one_year_decay_fun(prev_fired_Foliage_mass,Foliage_cm,year.i),
-#                           decay_Foliage_cumfrac = multi_year_decay_fun(1,Foliage_cm,year.i))]
-#                           
-#     # Calculate mass converted to duff, and populate the duff mass column
-#     study_area_FCID[,Duff_tonsAcre := Duff_tonsAcre + duff_decay_mass_fraction * (decay_CWD_mass_year_i + decay_FWD_mass_year_i + decay_Foliage_mass_year_i)]
-#     
-#     # Repeat for the fire exposed but unburned mass.
-#     study_area_FCID[,prev_fired_Duff_mass := prev_fired_Duff_mass + duff_decay_mass_fraction * (prev_fired_decay_CWD_mass_year_i + prev_fired_decay_FWD_mass_year_i + prev_fired_decay_Foliage_mass_year_i)]
-#     
-#     # Apply the mass lost to the dynamic mass columns.
-#     study_area_FCID[,(paste(residue.segment,"CWD_tonsAcre",sep="_")) := get(paste(residue.segment,"CWD_tonsAcre",sep="_")) - decay_CWD_mass_year_i]
-#     study_area_FCID[,(paste(residue.segment,"FWD_tonsAcre",sep="_")) := get(paste(residue.segment,"FWD_tonsAcre",sep="_")) - decay_FWD_mass_year_i]
-#     study_area_FCID[,(paste(residue.segment,"Foliage_tonsAcre",sep="_")) := get(paste(residue.segment,"Foliage_tonsAcre",sep="_")) - decay_Foliage_mass_year_i]
-#     
-#     # Repeat for the fire exposed but unburned mass.
-#     study_area_FCID[,':='(prev_fired_CWD_mass = prev_fired_CWD_mass - prev_fired_decay_CWD_mass_year_i,
-#                           prev_fired_FWD_mass = prev_fired_FWD_mass - prev_fired_decay_FWD_mass_year_i,
-#                           prev_fired_Foliage_mass = prev_fired_Foliage_mass - prev_fired_decay_Foliage_mass_year_i)]
-#     
-#     # Check if the foliage mass should be at least 1/2 decayed using decay_Foliage_cumfrac; if so, convert the rest of the foliage to duff.
-#     study_area_FCID[decay_Foliage_cumfrac <= 0.5, Duff_tonsAcre := Duff_tonsAcre + get(paste(residue.segment,"Foliage_tonsAcre",sep="_"))]
-#     study_area_FCID[decay_Foliage_cumfrac <= 0.5, paste(residue.segment,"Foliage_tonsAcre",sep="_") := 0]
-#     
-#     # The unburned foliage would revert to duff as well.
-#     study_area_FCID[decay_Foliage_cumfrac <= 0.5, prev_fired_Duff_mass := prev_fired_Duff_mass + prev_fired_Foliage_mass]
-#     study_area_FCID[decay_Foliage_cumfrac <= 0.5, prev_fired_Foliage_mass := 0]
-#     
-#     # Calculate emissions
-#     study_area_FCID[,paste("Emissions_year_",year.i,sep='') := get(paste("Emissions_year_",year.i,sep='')) + (1-duff_decay_mass_fraction) * (decay_CWD_mass_year_i + decay_FWD_mass_year_i + decay_Foliage_mass_year_i)]
-#     
-#     # Now decay duff, add emissions, and adjust mass totals
-#     study_area_FCID[,paste("Emissions_year_",year.i,sep='') := get(paste("Emissions_year_",year.i,sep='')) + one_year_decay_fun(Duff_tonsAcre,duff_k_val,year.i)]
-#     study_area_FCID[,Duff_tonsAcre := Duff_tonsAcre - one_year_decay_fun(Duff_tonsAcre,duff_k_val,year.i)]
-#     
-#     # Repeat emissions and duff decay for previously fired materials.
-#     study_area_FCID[,paste("Emissions_year_",year.i,sep='') := get(paste("Emissions_year_",year.i,sep='')) + (1-duff_decay_mass_fraction) * (prev_fired_decay_CWD_mass_year_i + prev_fired_decay_FWD_mass_year_i + prev_fired_decay_Foliage_mass_year_i)]
-#     
-#     # Duff decay - previously fired
-#     study_area_FCID[,paste("Emissions_year_",year.i,sep='') := get(paste("Emissions_year_",year.i,sep='')) + one_year_decay_fun(prev_fired_Duff_mass,duff_k_val,year.i)]
-#     study_area_FCID[,prev_fired_Duff_mass := prev_fired_Duff_mass - one_year_decay_fun(prev_fired_Duff_mass,duff_k_val,year.i)]
-#     
-#     # Address wildfire emissions and mass loss. 
-#     ##############################################################################################################
-#     ##############################################################################################################
-#     # CONFIRM THAT DUFF COMBUSTION RATE IS THE SAME AS THE FOLIAGE COMBUSTION RATE
-#     ##############################################################################################################
-#     ############################################################################################################## 
-#     
-#     study_area_FCID <- annual_wildfire_fun(study_area_FCID,residue.segment,year.i)
-#     ##############################################################################################################
-#     ##############################################################################################################
-#     # MICAH IS STILL WORKING ON WILDFIRE - WE MAY NEED TO ADJUST VARIABLE NAMES, OR POSSIBLY SOME MINOR DETAILS
-#     # OF THE APPROACH. SOME COLUMNS WERE CREATED BEFORE THE LOOP, BUT THE WILDFIRE SEGMENT STARTS HERE.
-#     ##############################################################################################################
-#     ##############################################################################################################  
-#     
-#     # Though wildfire will in reality strike one year and burn a large portion of residue, because wildfires are probabilistic, we model 
-#     # it as a series of annual, small wildfires, with the mass fraction of residues exposed to wildfire equal to the wildfire probability.
-#     # The first step is to determine the mass of residue exposed to wildfire using the residue mass and the MassExposedToWildfire fraction
-#     study_area_FCID[,fire_exposed_CWD_mass_year_i := get(paste(residue.segment,"CWD_tonsAcre",sep="_")) * MassExposedToWildfire]
-#     study_area_FCID[,fire_exposed_FWD_mass_year_i := get(paste(residue.segment,"FWD_tonsAcre",sep="_")) * MassExposedToWildfire]
-#     study_area_FCID[,fire_exposed_Foliage_mass_year_i := get(paste(residue.segment,"Foliage_tonsAcre",sep="_")) * MassExposedToWildfire]
-#     study_area_FCID[,fire_exposed_Duff_mass_year_i := Duff_tonsAcre * MassExposedToWildfire]
-#   
-#     # Apply the mass lost to the dynamic mass columns. 
-#     study_area_FCID[,(paste(residue.segment,"CWD_tonsAcre",sep="_")) := get(paste(residue.segment,"CWD_tonsAcre",sep="_")) - fire_exposed_CWD_mass_year_i]
-#     study_area_FCID[,(paste(residue.segment,"FWD_tonsAcre",sep="_")) := get(paste(residue.segment,"FWD_tonsAcre",sep="_")) - fire_exposed_FWD_mass_year_i]
-#     study_area_FCID[,(paste(residue.segment,"Foliage_tonsAcre",sep="_")) := get(paste(residue.segment,"Foliage_tonsAcre",sep="_")) - fire_exposed_Foliage_mass_year_i]
-#     study_area_FCID[,Duff_tonsAcre := Duff_tonsAcre - fire_exposed_Duff_mass_year_i]
-#     
-#     # The fraction of biomass exposed to wildfire will never be exposed again. Once exposed, biomass is either:
-#     # 1) Consumed by wildfire; the mass will be transferred to emissions 
-#     # 2) Charred; the mass will no longer decay.
-#     # 3) Left unburned, to decay normally. Previously exposed/unburned material will be decayed before this, and newly exposed/unburnt added below.
-#     
-#     # Apply the mass from the fire exposed to each category, starting with emissions
-#     study_area_FCID[,paste("Emissions_year_",year.i,sep='') := get(paste("Emissions_year_",year.i,sep='')) + 
-#                                                                CWD_CombustionFrac * fire_exposed_CWD_mass_year_i + 
-#                                                                FWD_CombustionFrac * fire_exposed_FWD_mass_year_i + 
-#                                                                Foliage_CombustionFrac * fire_exposed_Foliage_mass_year_i + 
-#                                                                Foliage_CombustionFrac * fire_exposed_Duff_mass_year_i]
-#   
-#     # Next, char
-#     study_area_FCID[,paste("char_year_",year.i,sep='') := get(paste("char_year_",year.i,sep='')) + 
-#                                                           CWD_CharFrac * fire_exposed_CWD_mass_year_i + 
-#                                                           FWD_CharFrac * fire_exposed_FWD_mass_year_i + 
-#                                                           Foliage_CharFrac * fire_exposed_Foliage_mass_year_i + 
-#                                                           Foliage_CharFrac * fire_exposed_Duff_mass_year_i]
-#   
-#     # And the unburned
-#     study_area_FCID[,':='(prev_fired_CWD_mass = prev_fired_CWD_mass + (CWD_UnburnedFrac * fire_exposed_CWD_mass_year_i),
-#                           prev_fired_FWD_mass = prev_fired_FWD_mass + (FWD_UnburnedFrac * fire_exposed_FWD_mass_year_i),
-#                           prev_fired_Foliage_mass = prev_fired_Foliage_mass + (Foliage_UnburnedFrac * fire_exposed_Foliage_mass_year_i),
-#                           prev_fired_Duff_mass = prev_fired_Duff_mass + (Foliage_UnburnedFrac * fire_exposed_Duff_mass_year_i)
-#                     )]
-#     
-#   }
-#   # I think we need to re-set the duff for the new residue segment so duff does not get double-counted.
-#   study_area_FCID[,':='(Duff_tonsAcre = 0, prev_fired_Duff_mass = 0)]
-# }
-# Sys.time()
-# beep(8)
-```
-
-For reference: modular code, residue segment for loops, 100 emissions/char columns.
-
-```{r}
-# Sys.time()
-# for (residue.segment in residue.segments) {
-#   print(residue.segment)
-#   for (year.i in 1:100) {
-#     print(year.i)
-#     
-#     # A few things will happen only in year 1 (if at all): residues collection (and processing, transportations, and power plant use), and prescribed burning. 
-#     # Calculate emissions and mass loss from these activities before decay/wildfire. Note: they will affect different residue segments, so it does not matter 
-#     # if if prescribed burning or collection comes first.
-#     if(year.i==1) {
-#       # Function for collection emissions goes HERE.
-#       
-#       # Make sure that the residue segment matches correctly with the prescribed burn method
-#       if(residue.segment == "Scattered" & user_inputs[variable=='burn_type',value] == "Broadcast Burn") {
-#          study_area_FCID <- prescribed_burn_fun(study_area_FCID, residue.segment, user_inputs[variable=='burn_type',value])
-#       }
-#       if(residue.segment == "FieldPiled" & user_inputs[variable=='burn_type',value] == "Jackpot Burn") {
-#          study_area_FCID <- prescribed_burn_fun(study_area_FCID, residue.segment, user_inputs[variable=='burn_type',value])
-#       }
-#       if(residue.segment == "LandingPiled" & user_inputs[variable=='burn_type',value] == "Pile Burn") {
-#          study_area_FCID <- prescribed_burn_fun(study_area_FCID, residue.segment, user_inputs[variable=='burn_type',value])
-#       }
-#     }
-#     
-#     # Calculate the total decayed mass
-#     study_area_FCID <- decay_fun(study_area_FCID,residue.segment,year.i)
-#     
-#     # Address wildfire emissions and mass loss. 
-#     ##############################################################################################################
-#     ##############################################################################################################
-#     # CONFIRM THAT DUFF COMBUSTION RATE IS THE SAME AS THE FOLIAGE COMBUSTION RATE
-#     ##############################################################################################################
-#     ############################################################################################################## 
-#     study_area_FCID <- annual_wildfire_fun(study_area_FCID,residue.segment,year.i)
-#     
-#   }
-#   # I think we need to re-set the duff for the new residue segment so duff does not get double-counted.
-#   study_area_FCID[,':='(Duff_tonsAcre = 0, prev_fired_Duff_mass = 0)]
-# }
-# Sys.time()
-```
 ```
 
 

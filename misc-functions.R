@@ -1,16 +1,19 @@
 # ==================================================================================
-# This is a collection of miscellaneous functions that are used throughout modules
+# This is a collection of miscellaneous functions and constants that are used 
+# throughout modules
 #
 # ==================================================================================
 
-
+########################
+########################
+# FUNCTIONS
+########################
+########################
 
 #####################################################################################
 # load.libraires: an easier and cleaner way to install and load libraries. Function
 # by Colin Sheppard, GitHub user colinsheppard, in the colinmisc repository.
 #####################################################################################
-# 
-
 load.libraries <- function (needed.packs, quietly = T) 
 {
   installed.packs <- installed.packages()
@@ -27,6 +30,18 @@ load.libraries <- function (needed.packs, quietly = T)
     }
   }
 }
+
+#####################################################################################
+# %notin%: converse of "%in%" function, identifies when one item is not in a target
+# object. Use: "a" %notin% c("b","c","d") will yiled TRUE.
+#####################################################################################
+"%notin%" <- function(x, table) match(x, table, nomatch = 0) == 0
+
+########################
+########################
+# CONSTANTS
+########################
+########################
 
 cell_to_acres <- 90 * 0.000247105 # 30 m x 30 m cell converted to acres
 

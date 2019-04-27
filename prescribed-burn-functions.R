@@ -20,14 +20,15 @@
 # cbrec.dt: the main study area data table from the calling script, which contains residue data and
 #   100 years of decay and char data.
 # residue.segment: Residue disposition; scattered, field piled or landing piled
-# year.i: The year for which we want to calculate the char and emissions from the year prior (i.e.,
-#   if t=3, we would calculate the emissions between years 2-3.)
 # -------------------------------------------------------------------------------------------------
 # OUTPUTS:
 # An updated cbrec.dt, with dynamic mass and emissions data reflecting calculated changes.
 # =================================================================================================
 
-prescribed_burn_fun <- function(cbrec.dt, residue.segment, burn.type, year.i) {
+prescribed_burn_fun <- function(cbrec.dt, residue.segment, burn.type) {
+  # Create an emissions output object
+  prescribed_burn_emissions <- data.table(CO2_tonnes=0, CO_tonnes=0, N2O_tonnes=0, CH4_tonnes=0, NOx_tonnes=0, PMUnder10um_tonnes=0, PMUnder2.5um_tonnes=0, SOx_tonnes=0, VOC_tonnes=0, char_tonnes=0)
+  
   # The prescribed burn will affect different residue segments depending on the burn type.
   if(burn.type=="Pile Burn") {
     # Burn type will affect residue segment affected AND emissions factors used.
@@ -60,7 +61,7 @@ prescribed_burn_fun <- function(cbrec.dt, residue.segment, burn.type, year.i) {
     # Any residue left unburnt can still be exposed to wildfire, so we can leave it in the original columns. Add combustion emissions to the emissions 
     # columns, and then adjust the dynamic mass column. Repeat for char. DUFF WILL NOT BE GENERATED YET, SO WE DON'T NEED TO WORRY ABOUT IT.
     # Calculate the other carbon emissions before CO2, the remainder will be lost as CO2.
-    century_emissions_profile[year.i,':='(CO_tonnes = CO_tonnes + prescribed.burn.combustion.frac * total_segment_residues * CO_burn_emissions_factor,
+    prescribed_burn_emissions[,':='(CO_tonnes = CO_tonnes + prescribed.burn.combustion.frac * total_segment_residues * CO_burn_emissions_factor,
                                           N2O_tonnes = N2O_tonnes + prescribed.burn.combustion.frac * total_segment_residues * N2O_burn_emissions_factor,
                                           CH4_tonnes = CH4_tonnes + prescribed.burn.combustion.frac * total_segment_residues * CH4_burn_emissions_factor,
                                           NOx_tonnes = NOx_tonnes + prescribed.burn.combustion.frac * total_segment_residues * NOx_burn_emissions_factor,
@@ -72,13 +73,13 @@ prescribed_burn_fun <- function(cbrec.dt, residue.segment, burn.type, year.i) {
     
     # Any carbon nbot emitted as CH4, CO, PM10, PM2.5, or VOC is emitted as CO2. So we need to determine how much of the carbon was emitted in those constituents, 
     # take the remainder emitted as CO2 and convert to mass CO2 emissions. Carbon fraction variables are species mass / carbon mass
-    non_CO2_carbon <- (prescribed.burn.combustion.frac * total_segment_residues * CO_burn_emissions_factor / CO_carbon_fraction +
+    non_CO2_combusted_carbon <- (prescribed.burn.combustion.frac * total_segment_residues * CO_burn_emissions_factor / CO_carbon_fraction +
                        prescribed.burn.combustion.frac * total_segment_residues * CH4_burn_emissions_factor / CH4_carbon_fraction +
                        prescribed.burn.combustion.frac * total_segment_residues * PMUnder10um_burn_emissions_factor / PM10_carbon_fraction +
                        prescribed.burn.combustion.frac * total_segment_residues * PMUnder2.5um_burn_emissions_factor / PM2.5_carbon_fraction +
                        prescribed.burn.combustion.frac * total_segment_residues * VOC_burn_emissions_factor / VOC_carbon_fraction)
     
-    century_emissions_profile[year.i, CO2_tonnes = CO2_tonnes + (total_segment_carbon * prescribed.burn.combustion.frac - non_CO2_carbon) * CO2_carbon_fraction]
+    prescribed_burn_emissions[, CO2_tonnes := CO2_tonnes + (total_segment_carbon * prescribed.burn.combustion.frac - non_CO2_combusted_carbon) * CO2_carbon_fraction]
     
     # Apply the mass lost to the dynamic mass columns. 
     cbrec.dt[,(paste(residue.segment,"CWD_tonsAcre",sep="_")) := (1 - prescribed.burn.combustion.frac - prescribed.burn.char.frac) * get(paste(residue.segment,"CWD_tonsAcre",sep="_"))]
@@ -115,7 +116,7 @@ prescribed_burn_fun <- function(cbrec.dt, residue.segment, burn.type, year.i) {
     # Any residue left unburnt can still be exposed to wildfire, so we can leave it in the original columns. Add combustion emissions to the emissions 
     # columns, and then adjust the dynamic mass column. Repeat for char. DUFF WILL NOT BE GENERATED YET, SO WE DON'T NEED TO WORRY ABOUT IT.
     # Calculate the other carbon emissions before CO2, the remainder will be lost as CO2.
-    century_emissions_profile[year.i,':='(CO_tonnes = CO_tonnes + total_combusted_residues * CO_burn_emissions_factor,
+    prescribed_burn_emissions[,':='(CO_tonnes = CO_tonnes + total_combusted_residues * CO_burn_emissions_factor,
                                           N2O_tonnes = N2O_tonnes + total_combusted_residues * N2O_burn_emissions_factor,
                                           CH4_tonnes = CH4_tonnes + total_combusted_residues * CH4_burn_emissions_factor,
                                           NOx_tonnes = NOx_tonnes + total_combusted_residues * NOx_burn_emissions_factor,
@@ -133,11 +134,13 @@ prescribed_burn_fun <- function(cbrec.dt, residue.segment, burn.type, year.i) {
                                  total_combusted_residues * PM2.5_burn_emissions_factor / PM2.5_carbon_fraction +
                                  total_combusted_residues * VOC_burn_emissions_factor / VOC_carbon_fraction)
     
-    century_emissions_profile[year.i, CO2_tonnes = CO2_tonnes + (total_combusted_carbon - non_CO2_carbon) * CO2_carbon_fraction]
+    prescribed_burn_emissions[, CO2_tonnes := CO2_tonnes + (total_combusted_carbon - non_CO2_combusted_carbon) * CO2_carbon_fraction]
     
     # Apply the mass lost to the dynamic mass columns. 
     cbrec.dt[,(paste(residue.segment,"CWD_tonsAcre",sep="_")) := (1 - CWD_CombustionFrac - CWD_CharFrac) * get(paste(residue.segment,"CWD_tonsAcre",sep="_"))]
     cbrec.dt[,(paste(residue.segment,"FWD_tonsAcre",sep="_")) := (1 - FWD_CombustionFrac - FWD_CharFrac) * get(paste(residue.segment,"FWD_tonsAcre",sep="_"))]
     cbrec.dt[,(paste(residue.segment,"Foliage_tonsAcre",sep="_")) := (1 - Foliage_CombustionFrac - Foliage_CharFrac) * get(paste(residue.segment,"Foliage_tonsAcre",sep="_"))]
   }
+  
+  return(list(prescribed_burn_emissions,cbrec.dt))
 }
