@@ -86,9 +86,9 @@ annual_wildfire_fun <- function(cbrec.dt, residue.segment, year.i) {
   wildfire_emissions_profile[, CO2_tonnes := CO2_tonnes + cbrec.dt[,sum(((CWD_CombustionFrac * fire_exposed_CWD_mass_year_i) + (FWD_CombustionFrac * fire_exposed_FWD_mass_year_i) + (Foliage_CombustionFrac * fire_exposed_Foliage_mass_year_i)) * (Carbon_frac - non_CO2_combusted_carbon_frac))] * cell_to_acres * CO2_carbon_fraction]
 
   # And address unburned residue
-  cbrec.dt[,':='(prev_fired_CWD_mass = prev_fired_CWD_mass + (CWD_UnburnedFrac * fire_exposed_CWD_mass_year_i),
-                 prev_fired_FWD_mass = prev_fired_FWD_mass + (FWD_UnburnedFrac * fire_exposed_FWD_mass_year_i),
-                 prev_fired_Foliage_mass = prev_fired_Foliage_mass + (Foliage_UnburnedFrac * fire_exposed_Foliage_mass_year_i)
+  cbrec.dt[,':='(prev_fired_CWD_tonsAcre = prev_fired_CWD_tonsAcre + (CWD_UnburnedFrac * fire_exposed_CWD_mass_year_i),
+                 prev_fired_FWD_tonsAcre = prev_fired_FWD_tonsAcre + (FWD_UnburnedFrac * fire_exposed_FWD_mass_year_i),
+                 prev_fired_Foliage_tonsAcre = prev_fired_Foliage_tonsAcre + (Foliage_UnburnedFrac * fire_exposed_Foliage_mass_year_i)
           )]
   
   return(list(wildfire_emissions_profile,cbrec.dt))
@@ -140,7 +140,7 @@ duff_annual_wildfire_fun <- function(cbrec.dt, year.i) {
   wildfire_emissions_profile[, CO2_tonnes := CO2_tonnes + cbrec.dt[,sum((Foliage_CombustionFrac * fire_exposed_Duff_mass_year_i) * (Carbon_frac - non_CO2_combusted_carbon_frac))] * cell_to_acres * CO2_carbon_fraction]
   
   # And the unburned
-  cbrec.dt[,prev_fired_Duff_mass := prev_fired_Duff_mass + (Foliage_UnburnedFrac * fire_exposed_Duff_mass_year_i)]
+  cbrec.dt[,prev_fired_Duff_tonsAcre := prev_fired_Duff_tonsAcre + (Foliage_UnburnedFrac * fire_exposed_Duff_mass_year_i)]
   
   return(list(wildfire_emissions_profile,cbrec.dt))
 }

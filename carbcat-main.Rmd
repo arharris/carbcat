@@ -9,6 +9,7 @@ source("harvest-processing.R")
 source("prescribed-burn-functions.R")
 source("decay-functions.R")
 source('wildfire-functions.R')
+source('power-plant-functions.R')
 source("misc-functions.R")
 ```
 
@@ -195,14 +196,14 @@ beep(4)
 
 Load some premade data for development and debugging.
 ```{r}
-load('/Volumes/744GB-Storage/CBREC R data/study_area_FCID.Rdata')
-
-# We'll need the shape file 
-if(!is.na(user_inputs[variable=='study_area_mask_file',value])) {
-    study_area_mask <- readOGR(user_inputs[variable=='study_area_mask_file',value])
-}
-
-beep(4)
+# load('/Volumes/744GB-Storage/CBREC R data/study_area_FCID.Rdata')
+# 
+# # We'll need the shape file 
+# if(!is.na(user_inputs[variable=='study_area_mask_file',value])) {
+#     study_area_mask <- readOGR(user_inputs[variable=='study_area_mask_file',value])
+# }
+# 
+# beep(4)
 ```
 
 We now have a spatially-indexed data table with residue loading information, decay rates, and cell slope values These values should be the same for every study area.
@@ -371,7 +372,10 @@ setnames(study_area_FCID,
          c("Recovered_FWD_tonsAcre","Piled_FWD_tonsAcre","Scattered_FWD_tonsAcre"))
 
 # Copy the residue columns for Piled and Scattered residues. These will be the initial mass residues in Year 1. We will also need some blank columns to track material exposed to fire but left unburned.
-study_area_FCID[,':='(Piled_CWD_tonsAcre_INITIAL = Piled_CWD_tonsAcre,
+study_area_FCID[,':='(Recovered_CWD_tonsAcre_INITIAL = Recovered_CWD_tonsAcre,
+                      Recovered_FWD_tonsAcre_INITIAL = Recovered_FWD_tonsAcre,
+                      Recovered_Foliage_tonsAcre_INITIAL = Recovered_Foliage_tonsAcre,
+                      Piled_CWD_tonsAcre_INITIAL = Piled_CWD_tonsAcre,
                       Piled_FWD_tonsAcre_INITIAL = Piled_FWD_tonsAcre,
                       Piled_Foliage_tonsAcre_INITIAL = Piled_Foliage_tonsAcre,
                       Scattered_CWD_tonsAcre_INITIAL = Scattered_CWD_tonsAcre,
@@ -382,7 +386,7 @@ study_area_FCID[,':='(Piled_CWD_tonsAcre_INITIAL = Piled_CWD_tonsAcre,
 # Make columns for duff, mass previously exposed to fire but unburnt, and year.i columns. If space becomes an issue, we can create/delete year.i column in the decay function, but I;m guessing that will hit our speed.
 study_area_FCID[,':='(Duff_tonsAcre=0, decay_CWD_mass_year_i=0, decay_FWD_mass_year_i=0, decay_Foliage_mass_year_i=0,
                       fire_exposed_CWD_mass_year_i=0, fire_exposed_FWD_mass_year_i=0, fire_exposed_Foliage_mass_year_i=0, fire_exposed_Duff_mass_year_i=0,
-                      prev_fired_CWD_mass=0, prev_fired_FWD_mass=0, prev_fired_Foliage_mass=0, prev_fired_Duff_mass=0)]
+                      prev_fired_CWD_tonsAcre=0, prev_fired_FWD_tonsAcre=0, prev_fired_Foliage_tonsAcre=0, prev_fired_Duff_tonsAcre=0)]
 
 century_emissions_profile <- data.table(CO2_tonnes=rep(0,100), CO_tonnes=rep(0,100), N2O_tonnes=rep(0,100), CH4_tonnes=rep(0,100), NOx_tonnes=rep(0,100), PMUnder10um_tonnes=rep(0,100), PMUnder2.5um_tonnes=rep(0,100), SOx_tonnes=rep(0,100), VOC_tonnes=rep(0,100), char_tonnes=rep(0,100))
 
@@ -454,6 +458,13 @@ if(user_inputs[variable=="biomass_collection",value]!="No") {
   # Now to determine equipment. This will vary depending on whther the harvest is high or low volume; this will be determined through average cell residue density
 
   #######################################################################################################################################
+  #######################################################################################################################################
+  # We've got a few cells missing wildfire exposure. For now, delete them, this may be a problem for the full study.
+  #######################################################################################################################################
+  #######################################################################################################################################
+  study_area_FCID <- study_area_FCID[!is.na(MassExposedToWildfire),]
+  
+  #######################################################################################################################################
   # Calculate harvest/processing emissions, and adjust mass totals.
   #######################################################################################################################################
   high_volume_cell_threshold_density <- 13 # BDT/scre; remember that tons/acre is the unit for all of our residues.
@@ -471,10 +482,26 @@ if(user_inputs[variable=="biomass_collection",value]!="No") {
   power_emission_factors <- data.table(read.csv(user_inputs[variable=='power_plant_emissions_filepath',value]))
   
   if(user_inputs[variable=='power_plant_location',value]=='Nearest') { # Multiple potential power plant locations
-    power_plant_emissions <- power_plant_fun(study_area_FCID, power_emission_factors, unique(study_area_FCID[,plant_location]))
+    power_plant_output <- power_plant_fun(study_area_FCID, power_emission_factors, unique(study_area_FCID[,plant_location]))
+    power_plant_emissions <- power_plant_output[[1]]
+    power_plant_production <- power_plant_output[[2]]
   } else { # Single power plant location
-    power_plant_emissions <- power_plant_fun(study_area_FCID, power_emission_factors, user_inputs[variable=='power_plant_location',value])
+    power_plant_output <- power_plant_fun(study_area_FCID, power_emission_factors, user_inputs[variable=='power_plant_location',value])
+    power_plant_emissions <- power_plant_output[[1]]
+    power_plant_production <- power_plant_output[[2]]
   }
+  
+  # Add the harvesting and power plant emissions to year 1 of the century emissions profile. Emissions are given in kg, we need them in tonnes
+  century_emissions_profile[1,':='(CO2_tonnes = (harvest_processing_emissions[,CO2_kg] + power_plant_emissions[,CO2_kg])/1000,
+                                   CO_tonnes = (harvest_processing_emissions[,CO_kg] + power_plant_emissions[,CO_kg])/1000,
+                                   N2O_tonnes = (harvest_processing_emissions[,N2O_kg] + power_plant_emissions[,N2O_kg])/1000,
+                                   CH4_tonnes = (harvest_processing_emissions[,CH4_kg] + power_plant_emissions[,CH4_kg])/1000,
+                                   NOx_tonnes = (harvest_processing_emissions[,NOx_kg] + power_plant_emissions[,NOx_kg])/1000,
+                                   PMUnder10um_tonnes = (harvest_processing_emissions[,PMUnder10um_kg] + power_plant_emissions[,PMUnder10um_kg])/1000,
+                                   PMUnder2.5um_tonnes = (harvest_processing_emissions[,PMUnder2.5um_kg] + power_plant_emissions[,PMUnder2.5um_kg])/1000,
+                                   SOx_tonnes = (harvest_processing_emissions[,SOx_kg] + power_plant_emissions[,SOx_kg])/1000,
+                                   VOC_tonnes = (harvest_processing_emissions[,VOC_kg] + power_plant_emissions[,VOC_kg])/1000,
+                                   char_tonnes = (harvest_processing_emissions[,char_kg] + power_plant_emissions[,char_kg])/1000)]
 }
 
 ```
@@ -498,24 +525,36 @@ for (year.i in 1:100) {
     
     # Make sure that the residue segment matches correctly with the prescribed burn method
     if(user_inputs[variable=='burn_type',value] == "Broadcast Burn") {
-      prescribed_burn_output <- prescribed_burn_fun(study_area_FCID, "Scattered", user_inputs[variable=='burn_type',value], year.i)
+      prescribed_burn_output <- prescribed_burn_fun(study_area_FCID, "Scattered", user_inputs[variable=='burn_type',value])
       prescribed_burn_emissions <- prescribed_burn_output[[1]]
       study_area_FCID <- prescribed_burn_output[[2]]
     }
     if(user_inputs[variable=='burn_type',value] == "Pile Burn") {
-      prescribed_burn_output <- prescribed_burn_fun(study_area_FCID, "Piled", user_inputs[variable=='burn_type',value], year.i)
+      prescribed_burn_output <- prescribed_burn_fun(study_area_FCID, "Piled", user_inputs[variable=='burn_type',value])
       prescribed_burn_emissions <- prescribed_burn_output[[1]]
       study_area_FCID <- prescribed_burn_output[[2]]
     }
     if(user_inputs[variable=='burn_type',value] == "Pile and Broadcast Burn") {
-      prescribed_burn_output <- prescribed_burn_fun(study_area_FCID, "Piled", user_inputs[variable=='burn_type',value], year.i)
+      prescribed_burn_output <- prescribed_burn_fun(study_area_FCID, "Piled", user_inputs[variable=='burn_type',value])
       prescribed_burn_emissions <- prescribed_burn_output[[1]]
       study_area_FCID <- prescribed_burn_output[[2]]
       
-      prescribed_burn_output <- prescribed_burn_fun(study_area_FCID, "Scattered", user_inputs[variable=='burn_type',value], year.i)
+      prescribed_burn_output <- prescribed_burn_fun(study_area_FCID, "Scattered", user_inputs[variable=='burn_type',value])
       prescribed_burn_emissions <- prescribed_burn_emissions + prescribed_burn_output[[1]]
       study_area_FCID <- prescribed_burn_output[[2]]
     }
+    
+    # Add to the century emissions profile
+    century_emissions_profile[year.i,':='(CO2_tonnes = CO2_tonnes + prescribed_burn_emissions[,CO2_tonnes],
+                                          CO_tonnes = CO_tonnes + prescribed_burn_emissions[,CO_tonnes],
+                                          N2O_tonnes = N2O_tonnes + prescribed_burn_emissions[,N2O_tonnes],
+                                          CH4_tonnes = CH4_tonnes + prescribed_burn_emissions[,CH4_tonnes],
+                                          NOx_tonnes = NOx_tonnes + prescribed_burn_emissions[,NOx_tonnes],
+                                          PMUnder10um_tonnes = PMUnder10um_tonnes + prescribed_burn_emissions[,PMUnder10um_tonnes],
+                                          PMUnder2.5um_tonnes = PMUnder2.5um_tonnes + prescribed_burn_emissions[,PMUnder2.5um_tonnes],
+                                          SOx_tonnes = SOx_tonnes + prescribed_burn_emissions[,SOx_tonnes],
+                                          VOC_tonnes = VOC_tonnes + prescribed_burn_emissions[,VOC_tonnes],
+                                          char_tonnes = char_tonnes + prescribed_burn_emissions[,char_tonnes])]
   }
   
   # Calculate the total decayed mass. "Previously Fired" must be a category; addressing previously fired material decay in each segment will run that decay 3 times over.
@@ -562,8 +601,34 @@ for (year.i in 1:100) {
   wildfire_emissions <- wildfire_emissions + wildfire_output[[1]]
   study_area_FCID <- wildfire_output[[2]]
   
+  # Add decay and wildfire to the century emissions profile
+  century_emissions_profile[1,':='(CO2_tonnes = CO2_tonnes + decay_emissions[,CO2_tonnes] + wildfire_emissions[,CO2_tonnes],
+                                   CO_tonnes = CO_tonnes + decay_emissions[,CO_tonnes] + wildfire_emissions[,CO_tonnes],
+                                   N2O_tonnes = N2O_tonnes + decay_emissions[,N2O_tonnes] + wildfire_emissions[,N2O_tonnes],
+                                   CH4_tonnes = CH4_tonnes + decay_emissions[,CH4_tonnes] + wildfire_emissions[,CH4_tonnes],
+                                   NOx_tonnes = NOx_tonnes + decay_emissions[,NOx_tonnes] + wildfire_emissions[,NOx_tonnes],
+                                   PMUnder10um_tonnes = PMUnder10um_tonnes + decay_emissions[,PMUnder10um_tonnes] + wildfire_emissions[,PMUnder10um_tonnes],
+                                   PMUnder2.5um_tonnes = PMUnder2.5um_tonnes + decay_emissions[,PMUnder2.5um_tonnes] + wildfire_emissions[,PMUnder2.5um_tonnes],
+                                   SOx_tonnes = SOx_tonnes + decay_emissions[,SOx_tonnes] + wildfire_emissions[,SOx_tonnes],
+                                   VOC_tonnes = VOC_tonnes + decay_emissions[,VOC_tonnes] + wildfire_emissions[,VOC_tonnes],
+                                   char_tonnes = char_tonnes + decay_emissions[,char_tonnes] + wildfire_emissions[,char_tonnes]
+                           )]
 }
+
+# In addition to the 100 year emission profiles, we need:
+# 1) The total available residue base (Piled_INITIAL + Scattered_INITIAL + Recovered_INITIAL)
+total_residue_base <- study_area_FCID[,sum(Recovered_CWD_tonsAcre_INITIAL, Recovered_FWD_tonsAcre_INITIAL, Recovered_Foliage_tonsAcre_INITIAL, Piled_CWD_tonsAcre_INITIAL, Piled_FWD_tonsAcre_INITIAL, Piled_Foliage_tonsAcre_INITIAL, Scattered_CWD_tonsAcre_INITIAL, Scattered_FWD_tonsAcre_INITIAL, Scattered_Foliage_tonsAcre_INITIAL)] * cell_to_acres
+
+# 2) The total technically recovered residue (Recovered_INITIAL)
+technically_recoverable_residue <- study_area_FCID[,sum(Recovered_CWD_tonsAcre_INITIAL, Recovered_FWD_tonsAcre_INITIAL, Recovered_Foliage_tonsAcre_INITIAL)] * cell_to_acres
+
+# 3) The total mass sent to the power plant (mass_to_plant)
+total_mass_to_power_plant <- study_area_FCID[,sum(mass_to_plant_tonsAcre)] * cell_to_acres
+
+# 4) The total energy generated, in MWHe. This is power_plant_production
+
 Sys.time()
+
 ```
 
 

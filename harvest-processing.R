@@ -40,7 +40,7 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.lo
   total.recovered.residue <- cbrec.dt[,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)]
   
   # Initialize harvest processing emissions; this will regurgitate one number to add to year 1 emissions.
-  harvest_processing_emissions <- data.table(CO2_kg=0, CO_kg=0, N2O_kg=0, CH4_kg=0, NOx_kg=0, PMUnder10um_kg=0, PMUnder2.5um_kg=0, SOx_kg=0, VOC_kg=0)
+  harvest_processing_emissions <- data.table(CO2_kg=0, CO_kg=0, N2O_kg=0, CH4_kg=0, NOx_kg=0, PMUnder10um_kg=0, PMUnder2.5um_kg=0, SOx_kg=0, VOC_kg=0,char_kg=0)
   
   # Create a column for recovered residues that will make it to the power plant. Currently assuming that after comminution, size class is irrelevant.
   cbrec.dt[,mass_to_plant_tonsAcre:=0]
@@ -105,7 +105,7 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.lo
     }
     
     # Equipment will vary based on the comminution option and the percent scattered fraction
-    if(scattered.fraction.high) {
+    if(scattered.fraction.high) { # high scattered fraction
       if(user_inputs[variable=='harvest_comminution_opt',value]=='chip') {
         ###################################
         # harvest.comminution.opt decision
@@ -212,7 +212,7 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.lo
           SOx_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(SOx_kg)] +
             cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(SOx_kg)] +
             cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(SOx_kg)] +
-            cbrec.dt[(merge_column=='Ground-Cut_to_Length' | merge_column=='Cable-Cut_to_Length') & cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(SOx_kg)], 
+            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(SOx_kg)], 
           
           VOC_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(VOC_kg)] +
             cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(VOC_kg)] +
@@ -220,7 +220,7 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.lo
             cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(VOC_kg)]
         )]
       }
-    } else {
+    } else { # low scattered fraction
       if(user_inputs[variable=='harvest_comminution_opt',value]=='chip') {
         ###################################
         # harvest.comminution.opt decision
@@ -458,7 +458,7 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.lo
       trans_over_35_slope <- equipment_emissions[Equipment_code=='H.3',]
     }
     
-    if(scattered.fraction.high) {
+    if(scattered.fraction.high) { # High scattered fraction
       # Harvest/Processing emissions
       if(user_inputs[variable=='harvest_comminution_opt',value]=='chip') {
         ###################################
@@ -620,7 +620,7 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.lo
             cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(VOC_kg)]
         )]
       }
-    } else {
+    } else { # Low scattered fraction
       # Harvest/Processing emissions
       if(user_inputs[variable=='harvest_comminution_opt',value]=='chip') {
         ###################################
@@ -705,7 +705,6 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.lo
             cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(VOC_kg)]
         )]
       }
-      
       # Processing emissions - Chip & Grind. Chips CWD, grinds the rest.
       if(user_inputs[variable=='harvest_comminution_opt',value]=='chipandgrind') {
         harvest_processing_emissions[,':='(

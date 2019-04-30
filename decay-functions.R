@@ -126,57 +126,46 @@ decay_fun <- function(cbrec.dt,residue.segment,year.i) {
     cbrec.dt[,':='(decay_CWD_mass_year_i = one_year_decay_fun(get(paste(residue.segment,"CWD_tonsAcre",sep="_")),piled_k_const(CWD_cm),year.i),
                    decay_FWD_mass_year_i = one_year_decay_fun(get(paste(residue.segment,"FWD_tonsAcre",sep="_")),piled_k_const(FWD_cm),year.i),
                    decay_Foliage_mass_year_i = one_year_decay_fun(get(paste(residue.segment,"Foliage_tonsAcre",sep="_")),piled_k_const(Foliage_cm),year.i),
-                   prev_fired_decay_CWD_mass_year_i = one_year_decay_fun(prev_fired_CWD_mass,piled_k_const(CWD_cm),year.i),
-                   prev_fired_decay_FWD_mass_year_i = one_year_decay_fun(prev_fired_FWD_mass,piled_k_const(FWD_cm),year.i),
-                   prev_fired_decay_Foliage_mass_year_i = one_year_decay_fun(prev_fired_Foliage_mass,piled_k_const(Foliage_cm),year.i),
                    decay_Foliage_cumfrac = multi_year_decay_fun(1,piled_k_const(Foliage_cm),year.i))]
   } else {
     # Non-piled residues, use standard k constant
     cbrec.dt[,':='(decay_CWD_mass_year_i = one_year_decay_fun(get(paste(residue.segment,"CWD_tonsAcre",sep="_")),CWD_cm,year.i),
                    decay_FWD_mass_year_i = one_year_decay_fun(get(paste(residue.segment,"FWD_tonsAcre",sep="_")),FWD_cm,year.i),
                    decay_Foliage_mass_year_i = one_year_decay_fun(get(paste(residue.segment,"Foliage_tonsAcre",sep="_")),Foliage_cm,year.i),
-                   prev_fired_decay_CWD_mass_year_i = one_year_decay_fun(prev_fired_CWD_mass,CWD_cm,year.i),
-                   prev_fired_decay_FWD_mass_year_i = one_year_decay_fun(prev_fired_FWD_mass,FWD_cm,year.i),
-                   prev_fired_decay_Foliage_mass_year_i = one_year_decay_fun(prev_fired_Foliage_mass,Foliage_cm,year.i),
                    decay_Foliage_cumfrac = multi_year_decay_fun(1,Foliage_cm,year.i))]
   }
-  
-  # Calculate mass converted to duff, and populate the duff mass column
-  cbrec.dt[,Duff_tonsAcre := Duff_tonsAcre + duff_decay_mass_fraction * (decay_CWD_mass_year_i + decay_FWD_mass_year_i + decay_Foliage_mass_year_i)]
-  
-  # Repeat for the fire exposed but unburned mass.
-  cbrec.dt[,prev_fired_Duff_mass := prev_fired_Duff_mass + duff_decay_mass_fraction * (prev_fired_decay_CWD_mass_year_i + prev_fired_decay_FWD_mass_year_i + prev_fired_decay_Foliage_mass_year_i)]
   
   # Apply the mass lost to the dynamic mass columns.
   cbrec.dt[,(paste(residue.segment,"CWD_tonsAcre",sep="_")) := get(paste(residue.segment,"CWD_tonsAcre",sep="_")) - decay_CWD_mass_year_i]
   cbrec.dt[,(paste(residue.segment,"FWD_tonsAcre",sep="_")) := get(paste(residue.segment,"FWD_tonsAcre",sep="_")) - decay_FWD_mass_year_i]
   cbrec.dt[,(paste(residue.segment,"Foliage_tonsAcre",sep="_")) := get(paste(residue.segment,"Foliage_tonsAcre",sep="_")) - decay_Foliage_mass_year_i]
   
-  # Repeat for the fire exposed but unburned mass.
-  cbrec.dt[,':='(prev_fired_CWD_mass = prev_fired_CWD_mass - prev_fired_decay_CWD_mass_year_i,
-                 prev_fired_FWD_mass = prev_fired_FWD_mass - prev_fired_decay_FWD_mass_year_i,
-                 prev_fired_Foliage_mass = prev_fired_Foliage_mass - prev_fired_decay_Foliage_mass_year_i)]
+  # Calculate mass converted to duff, and populate the duff mass column. If the the residue segment is previously fired residues, this will go to the previously fired duff column.
+  if(residue.segment=='prev_fired') {
+    cbrec.dt[,prev_fired_Duff_tonsAcre := prev_fired_Duff_tonsAcre + duff_decay_mass_fraction * (decay_CWD_mass_year_i + decay_FWD_mass_year_i + decay_Foliage_mass_year_i)]
+    
+    # Check if the foliage mass should be at least 1/2 decayed using decay_Foliage_cumfrac; if so, convert the rest of the foliage to duff. NOTE TO ANDY: if you get the brilliant idea to track decay loss, 
+    # this will not work - if (theoretically) 75% of the mass is lost to wildfire before it can decay, the transition to duff would never happen. Base the switch on the expected decay.
+    
+    cbrec.dt[decay_Foliage_cumfrac <= 0.5, prev_fired_Duff_tonsAcre := prev_fired_Duff_tonsAcre + get(paste(residue.segment,"Foliage_tonsAcre",sep="_"))]
+    cbrec.dt[decay_Foliage_cumfrac <= 0.5, paste(residue.segment,"Foliage_tonsAcre",sep="_") := 0]
+  } else {
+    cbrec.dt[,Duff_tonsAcre := Duff_tonsAcre + duff_decay_mass_fraction * (decay_CWD_mass_year_i + decay_FWD_mass_year_i + decay_Foliage_mass_year_i)]
+    
+    # Check if the foliage mass should be at least 1/2 decayed using decay_Foliage_cumfrac; if so, convert the rest of the foliage to duff. NOTE TO ANDY: if you get the brilliant idea to track decay loss, 
+    # this will not work - if (theoretically) 75% of the mass is lost to wildfire before it can decay, the transition to duff would never happen. Base the switch on the expected decay.
+    
+    cbrec.dt[decay_Foliage_cumfrac <= 0.5, Duff_tonsAcre := Duff_tonsAcre + get(paste(residue.segment,"Foliage_tonsAcre",sep="_"))]
+    cbrec.dt[decay_Foliage_cumfrac <= 0.5, paste(residue.segment,"Foliage_tonsAcre",sep="_") := 0]
+  }
   
-  # Check if the foliage mass should be at least 1/2 decayed using decay_Foliage_cumfrac; if so, convert the rest of the foliage to duff. NOTE TO ANDY: if you get the brilliant idea to track decay loss, 
-  # this will not work - if (theoretically) 75% of the mass is lost to wildfire before it can decay, the transition to duff would never happen. Base the switch on the expected decay.
-
-  cbrec.dt[decay_Foliage_cumfrac <= 0.5, Duff_tonsAcre := Duff_tonsAcre + get(paste(residue.segment,"Foliage_tonsAcre",sep="_"))]
-  cbrec.dt[decay_Foliage_cumfrac <= 0.5, paste(residue.segment,"Foliage_tonsAcre",sep="_") := 0]
   
-  # The unburned foliage would revert to duff as well.
-  cbrec.dt[decay_Foliage_cumfrac <= 0.5, prev_fired_Duff_mass := prev_fired_Duff_mass + prev_fired_Foliage_mass]
-  cbrec.dt[decay_Foliage_cumfrac <= 0.5, prev_fired_Foliage_mass := 0]
-  
-  # Calculate emissions - decay will generate CO2 and CH4, all other species are 0.
+    # Calculate emissions - decay will generate CO2 and CH4, all other species are 0.
   # CH4 
   decay_emissions_profile[,CH4_tonnes := CH4_tonnes + cbrec.dt[,sum(decay_CWD_mass_year_i + decay_FWD_mass_year_i + decay_Foliage_mass_year_i)] * (1-duff_decay_mass_fraction) * cell_to_acres * CH4_decay_emissions_factor]
   
   # CO2 Any carbon not emitted as CH4 will be as CO2.
   decay_emissions_profile[, CO2_tonnes := CO2_tonnes + cbrec.dt[,sum((decay_CWD_mass_year_i + decay_FWD_mass_year_i + decay_Foliage_mass_year_i) * (Carbon_frac - CH4_decay_emissions_factor / CH4_carbon_fraction))] * (1-duff_decay_mass_fraction) * cell_to_acres * CO2_carbon_fraction]
-  
-  # Repeat decay emissions for previously fired materials.
-  decay_emissions_profile[,CH4_tonnes := CH4_tonnes + cbrec.dt[,sum(prev_fired_decay_CWD_mass_year_i + prev_fired_decay_FWD_mass_year_i + prev_fired_decay_Foliage_mass_year_i)] * (1-duff_decay_mass_fraction) * cell_to_acres * CH4_decay_emissions_factor]
-  decay_emissions_profile[, CO2_tonnes := CO2_tonnes + cbrec.dt[,sum((prev_fired_decay_CWD_mass_year_i + prev_fired_decay_FWD_mass_year_i + prev_fired_decay_Foliage_mass_year_i) * (Carbon_frac - CH4_decay_emissions_factor / CH4_carbon_fraction))] * (1-duff_decay_mass_fraction) * cell_to_acres * CO2_carbon_fraction]
   
   return(list(decay_emissions_profile,cbrec.dt))
 }
@@ -206,9 +195,9 @@ duff_decay_fun <- function(cbrec.dt,year.i) {
   cbrec.dt[,Duff_tonsAcre := Duff_tonsAcre - one_year_decay_fun(Duff_tonsAcre,duff_k_val,year.i)]
   
   # Repeat for previously fired duff.
-  decay_emissions_profile[,CH4_tonnes := CH4_tonnes + cbrec.dt[,sum(one_year_decay_fun(prev_fired_Duff_mass,duff_k_val,year.i))] * cell_to_acres * CH4_decay_emissions_factor]
-  decay_emissions_profile[, CO2_tonnes := CO2_tonnes + cbrec.dt[,sum(one_year_decay_fun(prev_fired_Duff_mass,duff_k_val,year.i) * (Carbon_frac - CH4_decay_emissions_factor / CH4_carbon_fraction))] * cell_to_acres * CO2_carbon_fraction]
-  cbrec.dt[,prev_fired_Duff_mass := prev_fired_Duff_mass - one_year_decay_fun(prev_fired_Duff_mass,duff_k_val,year.i)]
+  decay_emissions_profile[,CH4_tonnes := CH4_tonnes + cbrec.dt[,sum(one_year_decay_fun(prev_fired_Duff_tonsAcre,duff_k_val,year.i))] * cell_to_acres * CH4_decay_emissions_factor]
+  decay_emissions_profile[, CO2_tonnes := CO2_tonnes + cbrec.dt[,sum(one_year_decay_fun(prev_fired_Duff_tonsAcre,duff_k_val,year.i) * (Carbon_frac - CH4_decay_emissions_factor / CH4_carbon_fraction))] * cell_to_acres * CO2_carbon_fraction]
+  cbrec.dt[,prev_fired_Duff_tonsAcre := prev_fired_Duff_tonsAcre - one_year_decay_fun(prev_fired_Duff_tonsAcre,duff_k_val,year.i)]
   
   return(list(decay_emissions_profile,cbrec.dt))
 }
