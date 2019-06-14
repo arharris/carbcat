@@ -43,13 +43,24 @@ load.libraries <- function (needed.packs, quietly = T)
 ########################
 ########################
 
-cell_to_acres <- 90 * 0.000247105 # 30 m x 30 m cell converted to acres
+cell_to_acres <- 900 * 0.000247105 # 30 m x 30 m cell converted to acres
 
 # (Mass emissions species) / (Mass carbon emitted)
 CO2_carbon_fraction <- 44.009/12.011
 CH4_carbon_fraction <- 16.0426/12.011
 CO_carbon_fraction <- 28.010/12.011
+PM10_carbon_fraction <- 1/0.6
+PM2.5_carbon_fraction <- 1/0.6
 # These are currently dummy values
-PM10_carbon_fraction <- 31/12.011
-PM2.5_carbon_fraction <- 45/12.011
-VOC_carbon_fraction <- 60/12.011
+warning("VOC and char carbon fractions must be confirmed.")
+VOC_carbon_fraction <- 1/0.1
+char_carbon_fraction <- 1/0.7 # Current assumption is that char is 70% carbon, based on summary of literature values.
+
+# Biomass plant type will have a set percentage of unburned fuel. Build a reference table for that here
+biomass_plant_unburnt_fuel <- data.table(plant.type=c("Biomass stoker","Fluidized bed combustor","Cyclone combustor","Gasifier"),unburned.fuel.frac=c(0.035,0.0025,0.03,0.0025))
+
+###################################################################################################
+# My code refers to the silvicultural treatments by code; the wildfire file names use full names.
+# This will allow us to move between the two easily.
+###################################################################################################
+treatment_name_lookup <- data.table(treat.code=c("RM100", "TFA20", "TFA40", "TFA60", "TFA80", "TFB20", "TFB40", "TFB60", "TFB80", "TP20", "TP40", "TP60", "TP80"),treat.name=c("Clearcut", "20_Thin_From_Above", "40_Thin_From_Above", "60_Thin_From_Above", "80_Thin_From_Above", "20_Thin_From_Below", "40_Thin_From_Below", "60_Thin_From_Below", "80_Thin_From_Below", "20_Proportional_Thin", "40_Proportional_Thin", "60_Proportional_Thin", "80_Proportional_Thin"))

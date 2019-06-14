@@ -27,794 +27,818 @@
 
 # Source files
 
-
 # Required Libraries
-# Calling line: 
-# harvest_processing_fun(study_area_FCID, high_volume_cell_threshold_density)
 
-harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.loss) {
+harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.loss,transportation.mass.loss) {
   # The cell density threshold is applied to the entire study area; if the mean recovered cell density is less than the density threshold, we've got a low volume harvest.
-  mean.study.area.density <- sum(cbrec.dt[,mean(Recovered_CWD_tonsAcre)],cbrec.dt[,mean(Recovered_FWD_tonsAcre)],cbrec.dt[,mean(Recovered_Foliage_tonsAcre)])
+  mean.study.area.density <- sum(cbrec.dt[,mean(Recovered_CWD_tonnesAcre)],cbrec.dt[,mean(Recovered_FWD_tonnesAcre)],cbrec.dt[,mean(Recovered_Foliage_tonnesAcre)])
   
   # If the total residue volume is less than 1000 BDT, we've got a small harvest.
-  total.recovered.residue <- cbrec.dt[,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)]
+  total.recovered.residue <- cbrec.dt[,sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)]
   
-  # Initialize harvest processing emissions; this will regurgitate one number to add to year 1 emissions.
-  harvest_processing_emissions <- data.table(CO2_kg=0, CO_kg=0, N2O_kg=0, CH4_kg=0, NOx_kg=0, PMUnder10um_kg=0, PMUnder2.5um_kg=0, SOx_kg=0, VOC_kg=0,char_kg=0)
+  # Initialize harvest processing emissions; this will regurgitate one row to add to year 1 emissions.
+  harvest.processing.emissions <- data.table(CO2_kg=0, CO_kg=0, CH4_kg=0, NOx_kg=0, PMUnder10um_kg=0, PMUnder2.5um_kg=0, SO2_kg=0, VOC_kg=0,char_kg=0)
+
+  # Do the same for transportation emissions.
+  transportation.emissions <- data.table(CO2_kg=0, CO_kg=0, CH4_kg=0, NOx_kg=0, PMUnder10um_kg=0, PMUnder2.5um_kg=0, SO2_kg=0, VOC_kg=0,char_kg=0)
   
   # Create a column for recovered residues that will make it to the power plant. Currently assuming that after comminution, size class is irrelevant.
-  cbrec.dt[,mass_to_plant_tonsAcre:=0]
-  
-  # When the equipment tree was originally mapped out, different pathways were identified for "In woods" versus "At landing"; this was assumed to correspond with "Cut-to-length" vs "Whole-tree"
-  # Cut to length and whole tree are no longer harvest system options, and have been replace by "percent scattered" and "percent piled." Though these do not exactly map to CTL vs WT, we assume 
-  # the following conversion: CTL -> 100% | 70% scattered, WT -> 50% | 30% scattered. Because the scattered percentage is a user input variable and they can be messy to call, we create a simpler binary variable
-  scattered.fraction.high <- user_inputs[variable=="fraction_scattered_residues",value]=='100%' | user_inputs[variable=="fraction_scattered_residues",value]=='70%'
+  cbrec.dt[,mass_to_plant_tonnesAcre:=0]
   
   ##########################
   # Harvest type decision
   ##########################
-  if(mean.study.area.density>density.threshold & total.recovered.residue > 1000) { ##### HIGH VOLUME HARVEST #####
-    # After the high/low volume determination, options will vary based upon: Harvest type (whole tree or cut-to-length), Slope, Treatment Type, and harvest.comminution.opt
-    # Processing equipment for cut-to-length harvests depend on the treatment type.
-    if(user_inputs[variable=='treatment_type',value]=='RM100') { # 100% thin
-      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1' | Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='G.2' | Equipment_code=='L.1',]
-      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1' | Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='C.1' | Equipment_code=='L.1',]
-      ctl_low_slope_grind <- equipment_emissions[Equipment_code=='T.1' | Equipment_code=='L.3'| Equipment_code=='G.2',]
-      ctl_low_slope_chip <- equipment_emissions[Equipment_code=='T.1' | Equipment_code=='L.3'| Equipment_code=='C.1',]
-    }
-    if(user_inputs[variable=='treatment_type',value]=='TFA20' | user_inputs[variable=='treatment_type',value]=='TFB20' | user_inputs[variable=='treatment_type',value]=='TP20') { # 20% thing
-      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1.20' | Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='G.2' | Equipment_code=='L.1',]
-      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1.20' | Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='C.1' | Equipment_code=='L.1',]
-      ctl_low_slope_grind <- equipment_emissions[Equipment_code=='T.1.20' | Equipment_code=='L.3.20'| Equipment_code=='G.2',]
-      ctl_low_slope_chip <- equipment_emissions[Equipment_code=='T.1.20' | Equipment_code=='L.3.20'| Equipment_code=='C.1',]
-    }
-    if(user_inputs[variable=='treatment_type',value]=='TFA40' | user_inputs[variable=='treatment_type',value]=='TFB40' | user_inputs[variable=='treatment_type',value]=='TP40') { # 20% thing
-      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1.40' | Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='G.2' | Equipment_code=='L.1',]
-      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1.40' | Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='C.1' | Equipment_code=='L.1',]
-      ctl_low_slope_grind <- equipment_emissions[Equipment_code=='T.1.40' | Equipment_code=='L.3.40'| Equipment_code=='G.2',]
-      ctl_low_slope_chip <- equipment_emissions[Equipment_code=='T.1.40' | Equipment_code=='L.3.40'| Equipment_code=='C.1',]
-    }
-    if(user_inputs[variable=='treatment_type',value]=='TFA60' | user_inputs[variable=='treatment_type',value]=='TFB60' | user_inputs[variable=='treatment_type',value]=='TP60') { # 20% thing
-      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1.60' | Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='G.2' | Equipment_code=='L.1',]
-      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1.60' | Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='C.1' | Equipment_code=='L.1',]
-      ctl_low_slope_grind <- equipment_emissions[Equipment_code=='T.1.60' | Equipment_code=='L.3.60'| Equipment_code=='G.2',]
-      ctl_low_slope_chip <- equipment_emissions[Equipment_code=='T.1.60' | Equipment_code=='L.3.60'| Equipment_code=='C.1',]
-    }
-    if(user_inputs[variable=='treatment_type',value]=='TFA80' | user_inputs[variable=='treatment_type',value]=='TFB80' | user_inputs[variable=='treatment_type',value]=='TP80') { # 20% thing
-      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1.80' | Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='G.2' | Equipment_code=='L.1',]
-      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1.80' | Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='C.1' | Equipment_code=='L.1',]
-      ctl_low_slope_grind <- equipment_emissions[Equipment_code=='T.1.80' | Equipment_code=='L.3.80'| Equipment_code=='G.2',]
-      ctl_low_slope_chip <- equipment_emissions[Equipment_code=='T.1.80' | Equipment_code=='L.3.80'| Equipment_code=='C.1',]
-    }
-    
-    # Whole tree harvests do not vary based upon treatment type.
-    wt_high_slope_grind <- equipment_emissions[Equipment_code=='G.2' | Equipment_code=='L.1',]
-    wt_high_slope_chip <- equipment_emissions[Equipment_code=='C.1' | Equipment_code=='L.1',]
-    wt_low_slope_grind <- equipment_emissions[Equipment_code=='G.2',]
-    wt_low_slope_chip <- equipment_emissions[Equipment_code=='C.1',]
-    
-    # Transportation equipment depends on slope and residue moisture
-    if(user_inputs[variable=='residue_moisture',value]=='Dry') {
-      trans_under_10_slope <- equipment_emissions[Equipment_code=='H.5',]
-      trans_10_to_35_slope <- equipment_emissions[Equipment_code=='H.4',]
-      trans_over_35_slope <- equipment_emissions[Equipment_code=='H.10',]
-    } else if(user_inputs[variable=='residue_moisture',value]=='Green') {
-      trans_under_10_slope <- equipment_emissions[Equipment_code=='H.5',]
-      trans_10_to_35_slope <- equipment_emissions[Equipment_code=='H.1',]
-      trans_over_35_slope <- equipment_emissions[Equipment_code=='H.3',]
-    }
-    
-    # Equipment will vary based on the comminution option and the percent scattered fraction
-    if(scattered.fraction.high) { # high scattered fraction
-      if(user_inputs[variable=='harvest_comminution_opt',value]=='chip') {
-        ###################################
-        # harvest.comminution.opt decision
-        ###################################
-        # Processing emissions - Chipping
-        harvest_processing_emissions[,':='(
-          CO2_kg = cbrec.dt[cell_slope>=35, sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope<35, sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(CO2_kg)],
-          
-          CO_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CO_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(CO_kg)], 
-          
-          N2O_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(N2O_kg)], 
-          
-          CH4_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(CH4_kg)], 
-          
-          NOx_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(NOx_kg)], 
-          
-          PMUnder10um_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(PMUnder10um_kg)], 
-          
-          PMUnder2.5um_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(PMUnder2.5um_kg)],
-          
-          SOx_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(SOx_kg)], 
-          
-          VOC_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(VOC_kg)]
-        )]
-      }
-      # Processing emissions - Grinding
-      if(user_inputs[variable=='harvest_comminution_opt',value]=='grind') {
-        harvest_processing_emissions[,':='(
-          CO2_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(CO2_kg)],
-          
-          CO_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(CO_kg)], 
-          
-          N2O_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(N2O_kg)], 
-          
-          CH4_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(CH4_kg)], 
-          
-          NOx_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(NOx_kg)], 
-          
-          PMUnder10um_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(PMUnder10um_kg)], 
-          
-          PMUnder2.5um_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(PMUnder2.5um_kg)],
-          
-          SOx_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(SOx_kg)], 
-          
-          VOC_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(VOC_kg)]
-        )]
-      }
-      # Processing emissions - Chip & Grind. Chips CWD, grinds the rest.
-      if(user_inputs[variable=='harvest_comminution_opt',value]=='chipandgrind') {
-        harvest_processing_emissions[,':='(
-          CO2_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(CO2_kg)],
-          
-          CO_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CO_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(CO_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(CO_kg)],
-          
-          N2O_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(N2O_kg)],
-          
-          CH4_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(CH4_kg)],
-          
-          NOx_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(NOx_kg)], 
-          
-          PMUnder10um_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(PMUnder10um_kg)], 
-          
-          PMUnder2.5um_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(PMUnder2.5um_kg)],
-          
-          SOx_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(SOx_kg)], 
-          
-          VOC_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_low_slope_chip[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(VOC_kg)]
-        )]
-      }
-    } else { # low scattered fraction
-      if(user_inputs[variable=='harvest_comminution_opt',value]=='chip') {
-        ###################################
-        # harvest.comminution.opt decision
-        ###################################
-        # Processing emissions - Chipping
-        harvest_processing_emissions[,':='(
-          CO2_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(CO2_kg)],
-          
-          CO_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CO_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(CO_kg)], 
-          
-          N2O_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(N2O_kg)], 
-          
-          CH4_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(CH4_kg)], 
-          
-          NOx_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(NOx_kg)], 
-          
-          PMUnder10um_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(PMUnder10um_kg)], 
-          
-          PMUnder2.5um_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(PMUnder2.5um_kg)],
-          
-          SOx_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(SOx_kg)], 
-          
-          VOC_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(VOC_kg)]
-        )]
-      }
-      # Processing emissions - Grinding
-      if(user_inputs[variable=='harvest_comminution_opt',value]=='grind') {
-        harvest_processing_emissions[,':='(
-          CO2_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(CO2_kg)],
-          
-          CO_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(CO_kg)], 
-          
-          N2O_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(N2O_kg)], 
-          
-          CH4_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(CH4_kg)], 
-          
-          NOx_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(NOx_kg)], 
-          
-          PMUnder10um_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(PMUnder10um_kg)], 
-          
-          PMUnder2.5um_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(PMUnder2.5um_kg)],
-          
-          SOx_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(SOx_kg)], 
-          
-          VOC_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_low_slope_grind[,sum(VOC_kg)]
-        )]
-      }
-      # Processing emissions - Chip & Grind. Chips CWD, grinds the rest.
-      if(user_inputs[variable=='harvest_comminution_opt',value]=='chipandgrind') {
-        harvest_processing_emissions[,':='(
-          CO2_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(CO2_kg)],
-          
-          CO_kg =cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CO_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(CO_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CO_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(CO_kg)],
-          
-          N2O_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(N2O_kg)],
-          
-          CH4_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(CH4_kg)],
-          
-          NOx_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(NOx_kg)], 
-          
-          PMUnder10um_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(PMUnder10um_kg)], 
-          
-          PMUnder2.5um_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(PMUnder2.5um_kg)],
-          
-          SOx_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(SOx_kg)], 
-          
-          VOC_kg = cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_low_slope_chip[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_low_slope_grind[,sum(VOC_kg)]
-        )]
-      }
-    }
+  if(mean.study.area.density>density.threshold & total.recovered.residue > 1000) { 
+    ##### HIGH VOLUME HARVEST #####
+    #########################################################
+    #########################################################
+    # DEBUGGING CODE - BANANAS!
+    #########################################################
+    #########################################################
+    Harvest.Volume <- "High Residue Volume"
+    # After the high/low volume determination, options will vary based upon: moisture/dirt content, comminution, residue collection type, treatment type, and slope. 
+    # Next, we differentiate based on residue collection.
+    if(user_inputs[variable=='biomass_collection',value]=='Piles Only') {
+      # "Dry/Green" will only affect the high volume equipment
+      if(user_inputs[variable=='residue_moisture',value]=='Green') {
+        # Within this category, treatment type has no effect.
+        Chip_LessThan10 <- equipment_emissions[Equipment_code=='C.1' | Equipment_code=='L.1',]
+        Chip_10To35 <- equipment_emissions[Equipment_code=='C.1' | Equipment_code=='L.1',]
+        Chip_Over35 <- equipment_emissions[Equipment_code=='C.1' | Equipment_code=='L.1',]
 
-    # Transportation Emissions - incorporate distance, as emissions are in tons * km
-    harvest_processing_emissions[,':='(
-      CO2_kg = CO2_kg +
-               cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(CO2_kg)])] +
-               cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(CO2_kg)])] +
-               cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(CO2_kg)])],
-      
-      CO_kg = CO_kg +
-              cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(CO_kg)])] +
-              cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(CO_kg)])] +
-              cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(CO_kg)])], 
-      
-      N2O_kg = N2O_kg +
-               cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(N2O_kg)])] +
-               cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(N2O_kg)])] +
-               cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(N2O_kg)])],
-      
-      CH4_kg = CH4_kg +
-               cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(CH4_kg)])] +
-               cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(CH4_kg)])] +
-               cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(CH4_kg)])],
-      
-      NOx_kg = NOx_kg +
-               cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(NOx_kg)])] +
-               cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(NOx_kg)])] +
-               cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(NOx_kg)])],
-      
-      PMUnder10um_kg = PMUnder10um_kg +
-                       cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(PMUnder10um_kg)])] +
-                       cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(PMUnder10um_kg)])] +
-                       cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(PMUnder10um_kg)])], 
-      
-      PMUnder2.5um_kg = PMUnder2.5um_kg +
-                        cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(PMUnder2.5um_kg)])] +
-                        cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(PMUnder2.5um_kg)])] +
-                        cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(PMUnder2.5um_kg)])],
-      
-      SOx_kg = SOx_kg +
-               cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(SOx_kg)])] +
-               cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(SOx_kg)])] +
-               cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(SOx_kg)])],
-      
-      VOC_kg = VOC_kg +
-               cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(VOC_kg)])] +
-               cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(VOC_kg)])] +
-               cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(VOC_kg)])]
-    )]
-    
-    # Processing mass loss and mass transfer to power plant
-    # In the high volume scenario, the only residues that are NOT processed and NOT sent to the power plant are those with the merge column "Do_Not_Harvest"
-    # Step 1, populate the mass_to_plant_tonsAcre from the recovered columns.
-    cbrec.dt[,mass_to_plant_tonsAcre := Recovered_CWD_tonsAcre * (1-processing.mass.loss) + Recovered_FWD_tonsAcre * (1-processing.mass.loss) + Recovered_Foliage_tonsAcre * (1-processing.mass.loss)]
-    
-    # Step 2, remove processed materials from the recovered materials. Leftover materials will be exposed to decay and wildfire.
-    cbrec.dt[,':='(Recovered_CWD_tonsAcre = Recovered_CWD_tonsAcre * processing.mass.loss,
-                   Recovered_FWD_tonsAcre = Recovered_FWD_tonsAcre * processing.mass.loss,
-                   Recovered_Foliage_tonsAcre = Recovered_Foliage_tonsAcre * processing.mass.loss)]
-      
-  } else { ##### LOW VOLUME HARVEST #####
-    # After the high/low volume determination, options will vary based upon: Harvest type (whole tree or cut-to-length), Slope, Treatment Type, and harvest.comminution.opt
-    # Processing equipment for cut-to-length harvests depend on the treatment type. We need to break out CWD and FWD/Foliage.
-    
-    if(user_inputs[variable=='treatment_type',value]=='RM100') { # 100% thin
-      ctl_CWD_chip <- equipment_emissions[Equipment_code=='SS.1.CTL' | Equipment_code=='T.3' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='C.2',]
-      ctl_CWD_grind <- equipment_emissions[Equipment_code=='SS.1.CTL' | Equipment_code=='T.3' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='G.1',]
-      ctl_FinesFoliage_chip <- equipment_emissions[Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='C.2',]
-      ctl_FinesFoliage_grind <- equipment_emissions[Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='G.1',]
-      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1' | Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='C.2' | Equipment_code=='L.1',]
-      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1' | Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='G.1' | Equipment_code=='L.1',]
+        Grind_LessThan10 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.2',]
+        Grind_10To35 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.2',]
+        Grind_Over35 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.2',]
+
+        Trans1_LessThan10 <- equipment_emissions[Equipment_code=='H.5',]
+        Trans1_10To35 <- equipment_emissions[Equipment_code=='H.6',]
+        Trans1_Over35 <- equipment_emissions[Equipment_code=='H.9',]
+        
+        # If the user has specifiedc that there will be a secondary harvest transfer point, apply appropriate emissions.
+        # If not, they are the same as transport1
+        if(user_inputs[variable=='harvest_transfer_point',value]) {
+          Trans2_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+          Trans2_10To35 <- equipment_emissions[Equipment_code=='H.5',]
+          Trans2_Over35 <- equipment_emissions[Equipment_code=='H.5',]
+          
+          TransLoad_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+          TransLoad_10To35 <- equipment_emissions[Equipment_code=='L.1',]
+          TransLoad_Over35 <- equipment_emissions[Equipment_code=='L.1',]
+          
+          # Add an extra 5 miles to CellToRoad to get to the trasfer point, and subtract that 5 miles from the RoadToPlant distance
+          CellToRoadMod <- 5
+          RoadToPlantMod <- -5
+        } else {
+          Trans2_LessThan10 <- equipment_emissions[Equipment_code=='H.5',]
+          Trans2_10To35 <- equipment_emissions[Equipment_code=='H.6',]
+          Trans2_Over35 <- equipment_emissions[Equipment_code=='H.9',]
+          
+          TransLoad_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+          TransLoad_10To35 <- equipment_emissions[Equipment_code=='NONE',]
+          TransLoad_Over35 <- equipment_emissions[Equipment_code=='NONE',]
+          
+          # There is no trasfer point, so we do not need to modify CellToRoad and RoadToPlant
+          CellToRoadMod <- 0
+          RoadToPlantMod <- 0
+        }
+
+      } else if(user_inputs[variable=='residue_moisture',value]=='Dry') {
+        # Within this category, treatment type has no effect. Chipping is not applied to these residues.
+        if(user_inputs[variable=='harvest_comminution_opt',value]=='chip') {
+          warning("Dry residues cannot be chipped; emissions for grinding equipment substituted")
+        }
+        
+        Grind_LessThan10 <- equipment_emissions[Equipment_code=='G.2' | Equipment_code=='L.1',]
+        Grind_10To35 <- equipment_emissions[Equipment_code=='G.2' | Equipment_code=='L.1',]
+        Grind_Over35 <- equipment_emissions[Equipment_code=='G.2' | Equipment_code=='L.1',]
+
+        Trans1_LessThan10 <- equipment_emissions[Equipment_code=='H.5',]
+        Trans1_10To35 <- equipment_emissions[Equipment_code=='H.1',]
+        Trans1_Over35 <- equipment_emissions[Equipment_code=='H.8',]
+        
+        # If the user has specifiedc that there will be a secondary harvest transfer point, apply appropriate emissions.
+        # If not, they are the same as transport1
+        if(user_inputs[variable=='harvest_transfer_point',value]) {
+          Trans2_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+          Trans2_10To35 <- equipment_emissions[Equipment_code=='H.5',]
+          Trans2_Over35 <- equipment_emissions[Equipment_code=='H.5',]
+          
+          TransLoad_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+          TransLoad_10To35 <- equipment_emissions[Equipment_code=='L.1',]
+          TransLoad_Over35 <- equipment_emissions[Equipment_code=='L.1',]
+          
+          # Add an extra 5 miles to CellToRoad to get to the trasfer point, and subtract that 5 miles from the RoadToPlant distance
+          CellToRoadMod <- 5
+          RoadToPlantMod <- -5
+        } else {
+          Trans2_LessThan10 <- equipment_emissions[Equipment_code=='H.5',]
+          Trans2_10To35 <- equipment_emissions[Equipment_code=='H.1',]
+          Trans2_Over35 <- equipment_emissions[Equipment_code=='H.8',]
+          
+          TransLoad_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+          TransLoad_10To35 <- equipment_emissions[Equipment_code=='NONE',]
+          TransLoad_Over35 <- equipment_emissions[Equipment_code=='NONE',]
+          
+          # There is no trasfer point, so we do not need to modify CellToRoad and RoadToPlant
+          CellToRoadMod <- 0
+          RoadToPlantMod <- 0
+        }
+        
+      } else {
+        stop("Residue moisture in input file must be 'Green' or 'Dry'") # Shoot an error message if the variable is wrong
+      }
+    } else if(user_inputs[variable=='biomass_collection',value]=='Piles and Scattered') {
+      # "Dry/Green" will only affect the high volume equipment
+      if(user_inputs[variable=='residue_moisture',value]=='Green') {
+        if(user_inputs[variable=='treatment_type',value]=='RM100') { # 100% thin
+
+          Chip_LessThan10 <- equipment_emissions[Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='L.1' | Equipment_code=='C.1',]
+          Chip_10To35 <- equipment_emissions[Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='L.1' | Equipment_code=='C.1',]
+          Chip_Over35 <- equipment_emissions[Equipment_code=='CY.1' | Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='L.1' | Equipment_code=='C.1',]
+          
+          Grind_LessThan10 <- equipment_emissions[Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_10To35 <- equipment_emissions[Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1' | Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='G.2' | Equipment_code=='L.1',]
+
+        }
+        if(user_inputs[variable=='treatment_type',value]=='TFA20' | user_inputs[variable=='treatment_type',value]=='TFB20' | user_inputs[variable=='treatment_type',value]=='TP20') { # 20% thing
+
+          Chip_LessThan10 <- equipment_emissions[Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='L.1' | Equipment_code=='C.1',]
+          Chip_10To35 <- equipment_emissions[Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='L.1' | Equipment_code=='C.1',]
+          Chip_Over35 <- equipment_emissions[Equipment_code=='CY.1.20' | Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='L.1' | Equipment_code=='C.1',]
+          
+          Grind_LessThan10 <- equipment_emissions[Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_10To35 <- equipment_emissions[Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1.20' | Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='G.2' | Equipment_code=='L.1',]
+
+        }
+        if(user_inputs[variable=='treatment_type',value]=='TFA40' | user_inputs[variable=='treatment_type',value]=='TFB40' | user_inputs[variable=='treatment_type',value]=='TP40') { # 20% thing
+          
+          Chip_LessThan10 <- equipment_emissions[Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='L.1' | Equipment_code=='C.1',]
+          Chip_10To35 <- equipment_emissions[Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='L.1' | Equipment_code=='C.1',]
+          Chip_Over35 <- equipment_emissions[Equipment_code=='CY.1.40' | Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='L.1' | Equipment_code=='C.1',]
+          
+          Grind_LessThan10 <- equipment_emissions[Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_10To35 <- equipment_emissions[Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1.40' | Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='G.2' | Equipment_code=='L.1',]
+
+        }
+        if(user_inputs[variable=='treatment_type',value]=='TFA60' | user_inputs[variable=='treatment_type',value]=='TFB60' | user_inputs[variable=='treatment_type',value]=='TP60') { # 20% thing
+
+          Chip_LessThan10 <- equipment_emissions[Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='L.1' | Equipment_code=='C.1',]
+          Chip_10To35 <- equipment_emissions[Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='L.1' | Equipment_code=='C.1',]
+          Chip_Over35 <- equipment_emissions[Equipment_code=='CY.1.60' | Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='L.1' | Equipment_code=='C.1',]
+
+          Grind_LessThan10 <- equipment_emissions[Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_10To35 <- equipment_emissions[Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1.60' | Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='G.2' | Equipment_code=='L.1',]
+
+        }
+        if(user_inputs[variable=='treatment_type',value]=='TFA80' | user_inputs[variable=='treatment_type',value]=='TFB80' | user_inputs[variable=='treatment_type',value]=='TP80') { # 20% thing
+          Chip_LessThan10 <- equipment_emissions[Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='L.1' | Equipment_code=='C.1',]
+          Chip_10To35 <- equipment_emissions[Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='L.1' | Equipment_code=='C.1',]
+          Chip_Over35 <- equipment_emissions[Equipment_code=='CY.1.80' | Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='L.1' | Equipment_code=='C.1',]
+          
+          Grind_LessThan10 <- equipment_emissions[Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_10To35 <- equipment_emissions[Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1.80' | Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='G.2' | Equipment_code=='L.1',]
+        }
+        
+        Trans1_LessThan10 <- equipment_emissions[Equipment_code=='H.5',]
+        Trans1_10To35 <- equipment_emissions[Equipment_code=='H.6',]
+        Trans1_Over35 <- equipment_emissions[Equipment_code=='H.9',]
+        
+        # If the user has specified that there will be a secondary harvest transfer point, apply appropriate emissions.
+        if(user_inputs[variable=='harvest_transfer_point',value]) {
+          Trans2_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+          Trans2_10To35 <- equipment_emissions[Equipment_code=='H.5',]
+          Trans2_Over35 <- equipment_emissions[Equipment_code=='H.5',]
+          
+          TransLoad_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+          TransLoad_10To35 <- equipment_emissions[Equipment_code=='L.1',]
+          TransLoad_Over35 <- equipment_emissions[Equipment_code=='L.1',]
+          
+          # Add an extra 5 miles to CellToRoad to get to the trasfer point, and subtract that 5 miles from the RoadToPlant distance
+          CellToRoadMod <- 5
+          RoadToPlantMod <- -5
+        } else {
+          Trans2_LessThan10 <- equipment_emissions[Equipment_code=='H.5',]
+          Trans2_10To35 <- equipment_emissions[Equipment_code=='H.6',]
+          Trans2_Over35 <- equipment_emissions[Equipment_code=='H.9',]
+          
+          TransLoad_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+          TransLoad_10To35 <- equipment_emissions[Equipment_code=='NONE',]
+          TransLoad_Over35 <- equipment_emissions[Equipment_code=='NONE',]
+          
+          # There is no trasfer point, so we do not need to modify CellToRoad and RoadToPlant
+          CellToRoadMod <- 0
+          RoadToPlantMod <- 0
+        }
+        
+      } else if(user_inputs[variable=='residue_moisture',value]=='Dry') {
+        # Chipping is not an option.
+        if(user_inputs[variable=='harvest_comminution_opt',value]=='chip') {
+          warning("Dry residues cannot be chipped; emissions for grinding equipment substituted")
+        }
+        if(user_inputs[variable=='treatment_type',value]=='RM100') { # 100% thin
+
+          Grind_LessThan10 <- equipment_emissions[Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_10To35 <- equipment_emissions[Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1' | Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          
+        }
+        if(user_inputs[variable=='treatment_type',value]=='TFA20' | user_inputs[variable=='treatment_type',value]=='TFB20' | user_inputs[variable=='treatment_type',value]=='TP20') { # 20% thing
+
+          Grind_LessThan10 <- equipment_emissions[Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_10To35 <- equipment_emissions[Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1.20' | Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          
+        }
+        if(user_inputs[variable=='treatment_type',value]=='TFA40' | user_inputs[variable=='treatment_type',value]=='TFB40' | user_inputs[variable=='treatment_type',value]=='TP40') { # 20% thing
+
+          Grind_LessThan10 <- equipment_emissions[Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_10To35 <- equipment_emissions[Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1.40' | Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          
+        }
+        if(user_inputs[variable=='treatment_type',value]=='TFA60' | user_inputs[variable=='treatment_type',value]=='TFB60' | user_inputs[variable=='treatment_type',value]=='TP60') { # 20% thing
+
+          Grind_LessThan10 <- equipment_emissions[Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_10To35 <- equipment_emissions[Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1.60' | Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          
+        }
+        if(user_inputs[variable=='treatment_type',value]=='TFA80' | user_inputs[variable=='treatment_type',value]=='TFB80' | user_inputs[variable=='treatment_type',value]=='TP80') { # 20% thing
+
+          Grind_LessThan10 <- equipment_emissions[Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_10To35 <- equipment_emissions[Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+          Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1.80' | Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='L.1' | Equipment_code=='G.2',]
+
+        }
+        
+        Trans1_LessThan10 <- equipment_emissions[Equipment_code=='H.5',]
+        Trans1_10To35 <- equipment_emissions[Equipment_code=='H.1',]
+        Trans1_Over35 <- equipment_emissions[Equipment_code=='H.8',]
+        
+        # If the user has specifiedc that there will be a secondary harvest transfer point, apply appropriate emissions.
+        if(user_inputs[variable=='harvest_transfer_point',value]) {
+          Trans2_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+          Trans2_10To35 <- equipment_emissions[Equipment_code=='H.5',]
+          Trans2_Over35 <- equipment_emissions[Equipment_code=='H.5',]
+          
+          TransLoad_LessThan10 <- equipment_emissions[Equipment_code=='NONE',] 
+          TransLoad_10To35 <- equipment_emissions[Equipment_code=='L.1',]
+          TransLoad_Over35 <- equipment_emissions[Equipment_code=='L.1',]
+          
+          # Add an extra 5 miles to CellToRoad to get to the trasfer point, and subtract that 5 miles from the RoadToPlant distance
+          CellToRoadMod <- 5
+          RoadToPlantMod <- -5
+        } else {
+          Trans2_LessThan10 <- equipment_emissions[Equipment_code=='H.5',]
+          Trans2_10To35 <- equipment_emissions[Equipment_code=='H.1',]
+          Trans2_Over35 <- equipment_emissions[Equipment_code=='H.8',]
+          
+          TransLoad_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+          TransLoad_10To35 <- equipment_emissions[Equipment_code=='NONE',]
+          TransLoad_Over35 <- equipment_emissions[Equipment_code=='NONE',]
+          
+          # There is no trasfer point, so we do not need to modify CellToRoad and RoadToPlant
+          CellToRoadMod <- 0
+          RoadToPlantMod <- 0
+        }
+        
+        
+      } else {
+        stop("Residue moisture in input file must be 'Green' or 'Dry'") # Shoot an error message if the variable is wrong
+      }
+    } else {
+      stop("Biomass collection in input file must be 'Piles Only' or 'Piles and Scattered'") # Shoot an error message if the variable is wrong
     }
-    if(user_inputs[variable=='treatment_type',value]=='TFA20' | user_inputs[variable=='treatment_type',value]=='TFB20' | user_inputs[variable=='treatment_type',value]=='TP20') { # 20% thing
-      ctl_CWD_chip <- equipment_emissions[Equipment_code=='SS.1.CTL.20' | Equipment_code=='T.3.20' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='C.2',]
-      ctl_CWD_grind <- equipment_emissions[Equipment_code=='SS.1.CTL.20' | Equipment_code=='T.3.20' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='G.1',]
-      ctl_FinesFoliage_chip <- equipment_emissions[Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='C.2',]
-      ctl_FinesFoliage_grind <- equipment_emissions[Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='G.1',]
-      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1.20' | Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='C.2' | Equipment_code=='L.1',]
-      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1.20' | Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='G.1' | Equipment_code=='L.1',]
-    }
-    if(user_inputs[variable=='treatment_type',value]=='TFA40' | user_inputs[variable=='treatment_type',value]=='TFB40' | user_inputs[variable=='treatment_type',value]=='TP40') { # 20% thing
-      ctl_CWD_chip <- equipment_emissions[Equipment_code=='SS.1.CTL.40' | Equipment_code=='T.3.40' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='C.2',]
-      ctl_CWD_grind <- equipment_emissions[Equipment_code=='SS.1.CTL.40' | Equipment_code=='T.3.40' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='G.1',]
-      ctl_FinesFoliage_chip <- equipment_emissions[Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='C.2',]
-      ctl_FinesFoliage_grind <- equipment_emissions[Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='G.1',]
-      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1.40' | Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='C.2' | Equipment_code=='L.1',]
-      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1.40' | Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='G.1' | Equipment_code=='L.1',]
-    }
-    if(user_inputs[variable=='treatment_type',value]=='TFA60' | user_inputs[variable=='treatment_type',value]=='TFB60' | user_inputs[variable=='treatment_type',value]=='TP60') { # 20% thing
-      ctl_CWD_chip <- equipment_emissions[Equipment_code=='SS.1.CTL.60' | Equipment_code=='T.3.60' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='C.2',]
-      ctl_CWD_grind <- equipment_emissions[Equipment_code=='SS.1.CTL.60' | Equipment_code=='T.3.60' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='G.1',]
-      ctl_FinesFoliage_chip <- equipment_emissions[Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='C.2',]
-      ctl_FinesFoliage_grind <- equipment_emissions[Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='G.1',]
-      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1.60' | Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='C.2' | Equipment_code=='L.1',]
-      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1.60' | Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='G.1' | Equipment_code=='L.1',]
-    }
-    if(user_inputs[variable=='treatment_type',value]=='TFA80' | user_inputs[variable=='treatment_type',value]=='TFB80' | user_inputs[variable=='treatment_type',value]=='TP80') { # 20% thing
-      ctl_CWD_chip <- equipment_emissions[Equipment_code=='SS.1.CTL.80' | Equipment_code=='T.3.80' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='C.2',]
-      ctl_CWD_grind <- equipment_emissions[Equipment_code=='SS.1.CTL.80' | Equipment_code=='T.3.80' | Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='G.1',]
-      ctl_FinesFoliage_chip <- equipment_emissions[Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='C.2',]
-      ctl_FinesFoliage_grind <- equipment_emissions[Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='G.1',]
-      ctl_high_slope_chip <- equipment_emissions[Equipment_code=='CY.1.80' | Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='C.2' | Equipment_code=='L.1',]
-      ctl_high_slope_grind <- equipment_emissions[Equipment_code=='CY.1.80' | Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='G.1' | Equipment_code=='L.1',]
-    }
     
-    # Whole tree harvests do not vary based upon treatment type.
-    wt_CWD_chip <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='C.2',]
-    wt_CWD_grind <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='P.1' | Equipment_code=='G.1',]
-    wt_FinesFoliage_chip <- equipment_emissions[Equipment_code=='C.2',]
-    wt_FinesFoliage_grind <- equipment_emissions[Equipment_code=='G.1',]
-    wt_high_slope_chip <- equipment_emissions[Equipment_code=='C.2' | Equipment_code=='L.1',]
-    wt_high_slope_grind <- equipment_emissions[Equipment_code=='G.1' | Equipment_code=='L.1',]
-    
-    if(user_inputs[variable=='residue_moisture',value]=='Dry') {
-      trans_under_10_slope <- equipment_emissions[Equipment_code=='H.5',]
-      trans_10_to_35_slope <- equipment_emissions[Equipment_code=='H.4',]
-      trans_over_35_slope <- equipment_emissions[Equipment_code=='H.10',]
-    } else if(user_inputs[variable=='residue_moisture',value]=='Green') {
-      trans_under_10_slope <- equipment_emissions[Equipment_code=='H.5',]
-      trans_10_to_35_slope <- equipment_emissions[Equipment_code=='H.1',]
-      trans_over_35_slope <- equipment_emissions[Equipment_code=='H.3',]
-    }
-    
-    if(scattered.fraction.high) { # High scattered fraction
-      # Harvest/Processing emissions
+    if(user_inputs[variable=='residue_moisture',value]=='Green') { 
       if(user_inputs[variable=='harvest_comminution_opt',value]=='chip') {
-        ###################################
-        # harvest.comminution.opt decision
-        ###################################
         # Processing emissions - Chipping
-        harvest_processing_emissions[,':='(
-          CO2_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CO2_kg)],
+        harvest.processing.emissions[,':='(
+          CO2_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_LessThan10[,sum(CO2_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_10To35[,sum(CO2_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_Over35[,sum(CO2_kg)],
           
-          CO_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(CO_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(CO_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CO_kg)],
+          CO_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_LessThan10[,sum(CO_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_10To35[,sum(CO_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_Over35[,sum(CO_kg)], 
           
-          N2O_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(N2O_kg)],
+          CH4_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_LessThan10[,sum(CH4_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_10To35[,sum(CH4_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_Over35[,sum(CH4_kg)], 
           
-          CH4_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CH4_kg)],
+          NOx_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_LessThan10[,sum(NOx_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_10To35[,sum(NOx_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_Over35[,sum(NOx_kg)], 
           
-          NOx_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(NOx_kg)],
+          PMUnder10um_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_LessThan10[,sum(PMUnder10um_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_10To35[,sum(PMUnder10um_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_Over35[,sum(PMUnder10um_kg)], 
           
-          PMUnder10um_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(PMUnder10um_kg)],
+          PMUnder2.5um_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_LessThan10[,sum(PMUnder2.5um_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_10To35[,sum(PMUnder2.5um_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_Over35[,sum(PMUnder2.5um_kg)],
           
-          PMUnder2.5um_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(PMUnder2.5um_kg)],
+          SO2_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_LessThan10[,sum(SO2_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_10To35[,sum(SO2_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_Over35[,sum(SO2_kg)], 
           
-          SOx_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(SOx_kg)],
-          
-          VOC_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_chip[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(VOC_kg)]
+          VOC_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_LessThan10[,sum(VOC_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_10To35[,sum(VOC_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_Over35[,sum(VOC_kg)]
         )]
+        #########################################################
+        #########################################################
+        # DEBUGGING CODE - BANANAS!
+        #########################################################
+        #########################################################
+        harvest.equipment.check.LT10 <- paste(Chip_LessThan10[,unique(Equipment_code)])
+        harvest.equipment.check.10T35 <- paste(Chip_10To35[,unique(Equipment_code)])
+        harvest.equipment.check.GT35 <- paste(Chip_Over35[,unique(Equipment_code)])
+        
       }
       # Processing emissions - Grinding
       if(user_inputs[variable=='harvest_comminution_opt',value]=='grind') {
-        harvest_processing_emissions[,':='(
-          CO2_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO2_kg)],
+        harvest.processing.emissions[,':='(
+          CO2_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(CO2_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(CO2_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(CO2_kg)],
           
-          CO_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(CO_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(CO_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO_kg)],
+          CO_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(CO_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(CO_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(CO_kg)],
           
-          N2O_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(N2O_kg)],
+          CH4_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(CH4_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(CH4_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(CH4_kg)],
           
-          CH4_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CH4_kg)],
+          NOx_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(NOx_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(NOx_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(NOx_kg)],
           
-          NOx_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(NOx_kg)],
+          PMUnder10um_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(PMUnder10um_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(PMUnder10um_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(PMUnder10um_kg)],
           
-          PMUnder10um_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder10um_kg)],
+          PMUnder2.5um_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(PMUnder2.5um_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(PMUnder2.5um_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(PMUnder2.5um_kg)],
           
-          PMUnder2.5um_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder2.5um_kg)],
+          SO2_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(SO2_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(SO2_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(SO2_kg)],
           
-          SOx_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(SOx_kg)],
-          
-          VOC_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(VOC_kg)]
+          VOC_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(VOC_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(VOC_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(VOC_kg)]
         )]
+        #########################################################
+        #########################################################
+        # DEBUGGING CODE - BANANAS!
+        #########################################################
+        #########################################################
+        harvest.equipment.check.LT10 <- paste(Grind_LessThan10[,unique(Equipment_code)])
+        harvest.equipment.check.10T35 <- paste(Grind_10To35[,unique(Equipment_code)])
+        harvest.equipment.check.GT35 <- paste(Grind_Over35[,unique(Equipment_code)])
+        
       }
+    } else { # Dry residues; if they were not "Green" or "Dry", the module would stop and an error message thrown before now. 
+      # Likewise, a warning will have been thrown if someone selected "chipped" Grinding values have been substituted.
+      harvest.processing.emissions[,':='(
+        CO2_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(CO2_kg)] +
+          cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(CO2_kg)] +
+          cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(CO2_kg)],
+
+        CO_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(CO_kg)] +
+          cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(CO_kg)] +
+          cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(CO_kg)],
+
+        CH4_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(CH4_kg)] +
+          cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(CH4_kg)] +
+          cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(CH4_kg)],
+
+        NOx_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(NOx_kg)] +
+          cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(NOx_kg)] +
+          cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(NOx_kg)],
+
+        PMUnder10um_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(PMUnder10um_kg)] +
+          cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(PMUnder10um_kg)] +
+          cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(PMUnder10um_kg)],
+
+        PMUnder2.5um_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(PMUnder2.5um_kg)] +
+          cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(PMUnder2.5um_kg)] +
+          cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(PMUnder2.5um_kg)],
+
+        SO2_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(SO2_kg)] +
+          cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(SO2_kg)] +
+          cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(SO2_kg)],
+
+        VOC_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(VOC_kg)] +
+          cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(VOC_kg)] +
+          cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(VOC_kg)]
+      )]
+      #########################################################
+      #########################################################
+      # DEBUGGING CODE - BANANAS!
+      #########################################################
+      #########################################################
+      harvest.equipment.check.LT10 <- paste(Grind_LessThan10[,unique(Equipment_code)])
+      harvest.equipment.check.10T35 <- paste(Grind_10To35[,unique(Equipment_code)])
+      harvest.equipment.check.GT35 <- paste(Grind_Over35[,unique(Equipment_code)])
       
-      # Processing emissions - Chip & Grind. Chips CWD, grinds the rest.
-      if(user_inputs[variable=='harvest_comminution_opt',value]=='chipandgrind') {
-        harvest_processing_emissions[,':='(
-          CO2_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO2_kg)],
-          
-          CO_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(CO_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(CO_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CO_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CO_kg)],
-          
-          N2O_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(N2O_kg)],
-          
-          CH4_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(CH4_kg)],
-          
-          NOx_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(NOx_kg)],
-          
-          PMUnder10um_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder10um_kg)],
-          
-          PMUnder2.5um_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_grind[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(PMUnder2.5um_kg)],
-          
-          SOx_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(SOx_kg)],
-          
-          VOC_kg = # Cut to length
-            cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_CWD_chip[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_FinesFoliage_grind[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * ctl_high_slope_chip[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * ctl_high_slope_grind[,sum(VOC_kg)]
-        )]
-      }
-    } else { # Low scattered fraction
-      # Harvest/Processing emissions
-      if(user_inputs[variable=='harvest_comminution_opt',value]=='chip') {
-        ###################################
-        # harvest.comminution.opt decision
-        ###################################
-        # Processing emissions - Chipping
-        harvest_processing_emissions[,':='(
-          CO2_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CO2_kg)],
-          
-          CO_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(CO_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(CO_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CO_kg)],
-          
-          N2O_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(N2O_kg)],
-          
-          CH4_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CH4_kg)],
-          
-          NOx_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(NOx_kg)],
-          
-          PMUnder10um_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(PMUnder10um_kg)],
-          
-          PMUnder2.5um_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(PMUnder2.5um_kg)],
-          
-          SOx_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(SOx_kg)],
-          
-          VOC_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_chip[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(VOC_kg)]
-        )]
-      }
-      # Processing emissions - Grinding
-      if(user_inputs[variable=='harvest_comminution_opt',value]=='grind') {
-        harvest_processing_emissions[,':='(
-          CO2_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CO2_kg)],
-          
-          CO_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(CO_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(CO_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CO_kg)],
-          
-          N2O_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(N2O_kg)],
-          
-          CH4_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CH4_kg)],
-          
-          NOx_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(NOx_kg)],
-          
-          PMUnder10um_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(PMUnder10um_kg)],
-          
-          PMUnder2.5um_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(PMUnder2.5um_kg)],
-          
-          SOx_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(SOx_kg)],
-          
-          VOC_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre, Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(VOC_kg)]
-        )]
-      }
-      # Processing emissions - Chip & Grind. Chips CWD, grinds the rest.
-      if(user_inputs[variable=='harvest_comminution_opt',value]=='chipandgrind') {
-        harvest_processing_emissions[,':='(
-          CO2_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CO2_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CO2_kg)],
-          
-          CO_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(CO_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(CO_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CO_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CO_kg)],
-          
-          N2O_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(N2O_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(N2O_kg)],
-          
-          CH4_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(CH4_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(CH4_kg)],
-          
-          NOx_kg = #cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(NOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(NOx_kg)],
-          
-          PMUnder10um_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(PMUnder10um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(PMUnder10um_kg)],
-          
-          PMUnder2.5um_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_grind[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(PMUnder2.5um_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(PMUnder2.5um_kg)],
-          
-          SOx_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(SOx_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(SOx_kg)],
-          
-          VOC_kg = cbrec.dt[cell_slope<35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_CWD_chip[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope<35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_FinesFoliage_grind[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_CWD_tonsAcre)] * cell_to_acres * wt_high_slope_chip[,sum(VOC_kg)] +
-            cbrec.dt[cell_slope>=35,sum(Recovered_FWD_tonsAcre, Recovered_Foliage_tonsAcre)] * cell_to_acres * wt_high_slope_grind[,sum(VOC_kg)]
-        )]
-      }
     }
+  } else { 
+    ##### LOW VOLUME HARVEST #####
+    #########################################################
+    #########################################################
+    # DEBUGGING CODE - BANANAS!
+    #########################################################
+    #########################################################
+    Harvest.Volume <- "Small Residue Volume"
+    # After the high/low volume determination, options will vary based upon: residue collection type, treatment type and slope.
+    # Unlike high volume harvests, low volume harvests do not vary based upon resdidue moisture, and the only comminution option is grinding. Because these are user variables,
+    # shoot a warning message to show what up.
+    warning("Study area calculated to have a low-volume harvest. Moisture/dirt content does not affect harvest, and the only comminution option is grinding - if you selected 'chip', that option has been overriden.")
     
-    # Transportation Emissions
-    # incorporate distance, as emissions are in tons * km. Remember: slope >=35 is not harvested.
-    harvest_processing_emissions[,':='(
-      CO2_kg = CO2_kg +
-               cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(CO2_kg)])] +
-               cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(CO2_kg)])] +
-               cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(CO2_kg)])],
-      
-      CO_kg = CO_kg +
-              cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(CO_kg)])] +
-              cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(CO_kg)])] +
-              cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(CO_kg)])],
+    if(user_inputs[variable=='biomass_collection',value]=='Piles Only') {
+      if(user_inputs[variable=='treatment_type',value]=='RM100') { # 100% thin
+        Grind_LessThan10 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
+        Grind_10To35 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
+        Grind_Over35 <- equipment_emissions[Equipment_code=='L.3' | Equipment_code=='L.1' | Equipment_code=='G.1',]
+        # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+      }
+      if(user_inputs[variable=='treatment_type',value]=='TFA20' | user_inputs[variable=='treatment_type',value]=='TFB20' | user_inputs[variable=='treatment_type',value]=='TP20') { # 20% thing
+        Grind_LessThan10 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
+        Grind_10To35 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
+        Grind_Over35 <- equipment_emissions[Equipment_code=='L.3.20' | Equipment_code=='L.1' | Equipment_code=='G.1',]
+        # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+      }
+      if(user_inputs[variable=='treatment_type',value]=='TFA40' | user_inputs[variable=='treatment_type',value]=='TFB40' | user_inputs[variable=='treatment_type',value]=='TP40') { # 20% thing
+        Grind_LessThan10 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
+        Grind_10To35 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
+        Grind_Over35 <- equipment_emissions[Equipment_code=='L.3.40' | Equipment_code=='L.1' | Equipment_code=='G.1',]
+        # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+      }
+      if(user_inputs[variable=='treatment_type',value]=='TFA60' | user_inputs[variable=='treatment_type',value]=='TFB60' | user_inputs[variable=='treatment_type',value]=='TP60') { # 20% thing
+        Grind_LessThan10 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
+        Grind_10To35 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
+        Grind_Over35 <- equipment_emissions[Equipment_code=='L.3.60' | Equipment_code=='L.1' | Equipment_code=='G.1',]
+        # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+      }
+      if(user_inputs[variable=='treatment_type',value]=='TFA80' | user_inputs[variable=='treatment_type',value]=='TFB80' | user_inputs[variable=='treatment_type',value]=='TP80') { # 20% thing
+        Grind_LessThan10 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
+        Grind_10To35 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
+        Grind_Over35 <- equipment_emissions[Equipment_code=='L.3.80' | Equipment_code=='L.1' | Equipment_code=='G.1',]
+        # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+      }
 
-      N2O_kg = N2O_kg +
-               cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(N2O_kg)])] +
-               cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(N2O_kg)])] +
-               cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(N2O_kg)])],
+      Trans1_LessThan10 <- equipment_emissions[Equipment_code=='H.5',]
+      Trans1_10To35 <- equipment_emissions[Equipment_code=='H.1',]
+      Trans1_Over35 <- equipment_emissions[Equipment_code=='H.8',]
+      
+      # If the user has specifiedc that there will be a secondary harvest transfer point, apply appropriate emissions.
+      # If not, they are the same as transport1
+      if(user_inputs[variable=='harvest_transfer_point',value]) {
+        Trans2_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+        Trans2_10To35 <- equipment_emissions[Equipment_code=='H.5',]
+        Trans2_Over35 <- equipment_emissions[Equipment_code=='H.5',]
 
-      CH4_kg = CH4_kg +
-               cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(CH4_kg)])] +
-               cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(CH4_kg)])] +
-               cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(CH4_kg)])],
-      
-      NOx_kg = NOx_kg +
-               cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(NOx_kg)])] +
-               cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(NOx_kg)])] +
-               cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(NOx_kg)])],
-      
-      PMUnder10um_kg = PMUnder10um_kg +
-                       cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(PMUnder10um_kg)])] +
-                       cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(PMUnder10um_kg)])] +
-                       cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(PMUnder10um_kg)])],
-      
-      PMUnder2.5um_kg = PMUnder2.5um_kg +
-                        cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(PMUnder2.5um_kg)])] +
-                        cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(PMUnder2.5um_kg)])] +
-                        cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(PMUnder2.5um_kg)])],
-      
-      SOx_kg = SOx_kg +
-               cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(SOx_kg)])] +
-               cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(SOx_kg)])] +
-               cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(SOx_kg)])],
-      
-      VOC_kg = VOC_kg +
-               cbrec.dt[cell_slope<=10,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_under_10_slope[,sum(VOC_kg)])] +
-               cbrec.dt[cell_slope>10 & cell_slope<35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_10_to_35_slope[,sum(VOC_kg)])] +
-               cbrec.dt[cell_slope>=35,sum((Recovered_CWD_tonsAcre + Recovered_FWD_tonsAcre + Recovered_Foliage_tonsAcre) * cell_to_acres * TotalRoad_miles * trans_over_35_slope[,sum(VOC_kg)])]
-    )]
+        TransLoad_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+        TransLoad_10To35 <- equipment_emissions[Equipment_code=='L.1',]
+        TransLoad_Over35 <- equipment_emissions[Equipment_code=='L.1',]
+        
+        # Add an extra 5 miles to CellToRoad to get to the trasfer point, and subtract that 5 miles from the RoadToPlant distance
+        CellToRoadMod <- 5
+        RoadToPlantMod <- -5
+      } else {
+        Trans2_LessThan10 <- equipment_emissions[Equipment_code=='H.5',]
+        Trans2_10To35 <- equipment_emissions[Equipment_code=='H.1',]
+        Trans2_Over35 <- equipment_emissions[Equipment_code=='H.8',]
+
+        TransLoad_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+        TransLoad_10To35 <- equipment_emissions[Equipment_code=='NONE',]
+        TransLoad_Over35 <- equipment_emissions[Equipment_code=='NONE',]
+        
+        # There is no trasfer point, so we do not need to modify CellToRoad and RoadToPlant
+        CellToRoadMod <- 0
+        RoadToPlantMod <- 0
+      }
+        
+    } else if(user_inputs[variable=='biomass_collection',value]=='Piles and Scattered') {
+      # "Dry/Green" will only affect the high volume equipment
+      if(user_inputs[variable=='treatment_type',value]=='RM100') { # 100% thin
+        Grind_LessThan10 <- equipment_emissions[Equipment_code=='SS.2.WT' | Equipment_code=='L.3' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
+        Grind_10To35 <- equipment_emissions[Equipment_code=='SS.2.WT' | Equipment_code=='L.3' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
+        Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1' | Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='G.1' | Equipment_code=='CS.1' | Equipment_code=='L.1',]
+        # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+      }
+      if(user_inputs[variable=='treatment_type',value]=='TFA20' | user_inputs[variable=='treatment_type',value]=='TFB20' | user_inputs[variable=='treatment_type',value]=='TP20') { # 20% thing
+        Grind_LessThan10 <- equipment_emissions[Equipment_code=='SS.2.WT.20' | Equipment_code=='L.3.20' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
+        Grind_10To35 <- equipment_emissions[Equipment_code=='SS.2.WT.20' | Equipment_code=='L.3.20' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
+        Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1.20' | Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='G.1' | Equipment_code=='CS.1' | Equipment_code=='L.1',]
+        # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+      }
+      if(user_inputs[variable=='treatment_type',value]=='TFA40' | user_inputs[variable=='treatment_type',value]=='TFB40' | user_inputs[variable=='treatment_type',value]=='TP40') { # 20% thing
+        Grind_LessThan10 <- equipment_emissions[Equipment_code=='SS.2.WT.40' | Equipment_code=='L.3.40' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
+        Grind_10To35 <- equipment_emissions[Equipment_code=='SS.2.WT.40' | Equipment_code=='L.3.40' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
+        Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1.40' | Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='G.1' | Equipment_code=='CS.1' | Equipment_code=='L.1',]
+        # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+      }
+      if(user_inputs[variable=='treatment_type',value]=='TFA60' | user_inputs[variable=='treatment_type',value]=='TFB60' | user_inputs[variable=='treatment_type',value]=='TP60') { # 20% thing
+        Grind_LessThan10 <- equipment_emissions[Equipment_code=='SS.2.WT.60' | Equipment_code=='L.3.60' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
+        Grind_10To35 <- equipment_emissions[Equipment_code=='SS.2.WT.60' | Equipment_code=='L.3.60' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
+        Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1.60' | Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='G.1' | Equipment_code=='CS.1' | Equipment_code=='L.1',]
+        # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+      }
+      if(user_inputs[variable=='treatment_type',value]=='TFA80' | user_inputs[variable=='treatment_type',value]=='TFB80' | user_inputs[variable=='treatment_type',value]=='TP80') { # 20% thing
+        Grind_LessThan10 <- equipment_emissions[Equipment_code=='SS.2.WT.80' | Equipment_code=='L.3.80' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
+        Grind_10To35 <- equipment_emissions[Equipment_code=='SS.2.WT.80' | Equipment_code=='L.3.80' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
+        Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1.80' | Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='G.1' | Equipment_code=='CS.1' | Equipment_code=='L.1',]
+        # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+      }
+      Trans1_LessThan10 <- equipment_emissions[Equipment_code=='H.5',]
+      Trans1_10To35 <- equipment_emissions[Equipment_code=='H.1',]
+      Trans1_Over35 <- equipment_emissions[Equipment_code=='H.8',]
+
+      # If the user has specified that there will be a secondary harvest transfer point, apply appropriate emissions.
+      if(user_inputs[variable=='harvest_transfer_point',value]) {
+        Trans2_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+        Trans2_10To35 <- equipment_emissions[Equipment_code=='H.5',]
+        Trans2_Over35 <- equipment_emissions[Equipment_code=='H.5',]
+
+        TransLoad_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+        TransLoad_10To35 <- equipment_emissions[Equipment_code=='L.1',]
+        TransLoad_Over35 <- equipment_emissions[Equipment_code=='L.1',]
+        
+        # Add an extra 5 miles to CellToRoad to get to the trasfer point, and subtract that 5 miles from the RoadToPlant distance
+        CellToRoadMod <- 5
+        RoadToPlantMod <- -5
+      } else {
+        Trans2_LessThan10 <- equipment_emissions[Equipment_code=='H.5',]
+        Trans2_10To35 <- equipment_emissions[Equipment_code=='H.1',]
+        Trans2_Over35 <- equipment_emissions[Equipment_code=='H.8',]
+
+        TransLoad_LessThan10 <- equipment_emissions[Equipment_code=='NONE',]
+        TransLoad_10To35 <- equipment_emissions[Equipment_code=='NONE',]
+        TransLoad_Over35 <- equipment_emissions[Equipment_code=='NONE',]
+        
+        # There is no trasfer point, so we do not need to modify CellToRoad and RoadToPlant
+        CellToRoadMod <- 0
+        RoadToPlantMod <- 0
+      }
+    } else {
+      stop("Biomass collection in input file must be 'Piles Only' or 'Piles and Scattered'") # Shoot an error message if the variable is wrong
+    }
+    # Processing emissions - for small harvest, grind only
+    harvest.processing.emissions[,':='(
+      CO2_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(CO2_kg)] +
+        cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(CO2_kg)] +
+        cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(CO2_kg)],
+
+      CO_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(CO_kg)] +
+        cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(CO_kg)] +
+        cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(CO_kg)],
+
+      CH4_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(CH4_kg)] +
+        cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(CH4_kg)] +
+        cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(CH4_kg)],
+
+      NOx_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(NOx_kg)] +
+        cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(NOx_kg)] +
+        cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(NOx_kg)],
+
+      PMUnder10um_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(PMUnder10um_kg)] +
+        cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(PMUnder10um_kg)] +
+        cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(PMUnder10um_kg)],
+
+      PMUnder2.5um_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(PMUnder2.5um_kg)] +
+        cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(PMUnder2.5um_kg)] +
+        cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(PMUnder2.5um_kg)],
+
+      SO2_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(SO2_kg)] +
+        cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(SO2_kg)] +
+        cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(SO2_kg)],
+
+      VOC_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(VOC_kg)] +
+        cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(VOC_kg)] +
+        cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(VOC_kg)]
+      )]
+    #########################################################
+    #########################################################
+    # DEBUGGING CODE - BANANAS!
+    #########################################################
+    #########################################################
+    harvest.equipment.check.LT10 <- paste(Grind_LessThan10[,unique(Equipment_code)])
+    harvest.equipment.check.10T35 <- paste(Grind_10To35[,unique(Equipment_code)])
+    harvest.equipment.check.GT35 <- paste(Grind_Over35[,unique(Equipment_code)])
     
-    # Processing mass loss and mass transfer to power plant
-    # In the high volume scenario, the only residues that are NOT processed and NOT sent to the power plant are those with the merge column "Do_Not_Harvest"
-    # Step 1, populate the mass_to_plant_tonsAcre from the recovered columns.
-    cbrec.dt[,mass_to_plant_tonsAcre := Recovered_CWD_tonsAcre * (1-processing.mass.loss) + Recovered_FWD_tonsAcre * (1-processing.mass.loss) + Recovered_Foliage_tonsAcre * (1-processing.mass.loss)]
-    
-    # Step 2, remove processed materials from the recovered materials. Leftover materials will be exposed to decay and wildfire.
-    cbrec.dt[,':='(Recovered_CWD_tonsAcre = Recovered_CWD_tonsAcre * processing.mass.loss,
-                   Recovered_FWD_tonsAcre = Recovered_FWD_tonsAcre * processing.mass.loss,
-                   Recovered_Foliage_tonsAcre = Recovered_Foliage_tonsAcre * processing.mass.loss)]
   }
+
+  # Transportation Emissions - incorporate distance, as emissions are in tons * km. "Transportation 1" is applied for CellToRoad and an additional 5 miles to a theorhetical transfer point, and "Transportation 2" is appied to the 
+  # the Road to Plant distance, minus the 5 miles to the transfer point. If CellToRoadDist is less than 5 miles, then only Transportation 1 is used.
+  transportation.emissions[,':='(
+    CO2_kg = CO2_kg +
+      # Emissions from cells with less than 5 miles between road point to plant; this will only utilize Transportation 1, and the distance is the CelltoRoad and Road to Plant.
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_LessThan10[,sum(CO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_10To35[,sum(CO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_Over35[,sum(CO2_kg)])] +
+      # Emissions from cells with more than 5 miles between road and plant; this will utilize transportation 1 and 2. Transportation 1 will cover CelltoRoad and CellToRoadMod, Trans2 will cover RoadToPlant and RoadToPlantMod.
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_LessThan10[,sum(CO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_10To35[,sum(CO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_Over35[,sum(CO2_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_LessThan10[,sum(CO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_10To35[,sum(CO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_Over35[,sum(CO2_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_LessThan10[,sum(CO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_10To35[,sum(CO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_Over35[,sum(CO2_kg)])],
+
+    CO_kg = CO_kg +
+      # Emissions from cells with less than 5 miles between road point to plant; this will only utilize Transportation 1, and the distance is the CelltoRoad and Road to Plant.
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_LessThan10[,sum(CO_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_10To35[,sum(CO_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_Over35[,sum(CO_kg)])] +
+      # Emissions from cells with more than 5 miles between road and plant; this will utilize transportation 1 and 2. Transportation 1 will cover CelltoRoad and CellToRoadMod, Trans2 will cover RoadToPlant and RoadToPlantMod.
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_LessThan10[,sum(CO_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_10To35[,sum(CO_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_Over35[,sum(CO_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_LessThan10[,sum(CO_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_10To35[,sum(CO_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_Over35[,sum(CO_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_LessThan10[,sum(CO_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_10To35[,sum(CO_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_Over35[,sum(CO_kg)])],
+    
+    CH4_kg = CH4_kg +
+      # Emissions from cells with less than 5 miles between road point to plant; this will only utilize Transportation 1, and the distance is the CelltoRoad and Road to Plant.
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_LessThan10[,sum(CH4_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_10To35[,sum(CH4_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_Over35[,sum(CH4_kg)])] +
+      # Emissions from cells with more than 5 miles between road and plant; this will utilize transportation 1 and 2. Transportation 1 will cover CelltoRoad and CellToRoadMod, Trans2 will cover RoadToPlant and RoadToPlantMod.
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_LessThan10[,sum(CH4_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_10To35[,sum(CH4_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_Over35[,sum(CH4_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_LessThan10[,sum(CH4_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_10To35[,sum(CH4_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_Over35[,sum(CH4_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_LessThan10[,sum(CH4_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_10To35[,sum(CH4_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_Over35[,sum(CH4_kg)])],
+
+    NOx_kg = NOx_kg +
+      # Emissions from cells with less than 5 miles between road point to plant; this will only utilize Transportation 1, and the distance is the CelltoRoad and Road to Plant.
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_LessThan10[,sum(NOx_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_10To35[,sum(NOx_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_Over35[,sum(NOx_kg)])] +
+      # Emissions from cells with more than 5 miles between road and plant; this will utilize transportation 1 and 2. Transportation 1 will cover CelltoRoad and CellToRoadMod, Trans2 will cover RoadToPlant and RoadToPlantMod.
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_LessThan10[,sum(NOx_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_10To35[,sum(NOx_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_Over35[,sum(NOx_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_LessThan10[,sum(NOx_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_10To35[,sum(NOx_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_Over35[,sum(NOx_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_LessThan10[,sum(NOx_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_10To35[,sum(NOx_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_Over35[,sum(NOx_kg)])],
+
+    PMUnder10um_kg = PMUnder10um_kg +
+      # Emissions from cells with less than 5 miles between road point to plant; this will only utilize Transportation 1, and the distance is the CelltoRoad and Road to Plant.
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_LessThan10[,sum(PMUnder10um_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_10To35[,sum(PMUnder10um_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_Over35[,sum(PMUnder10um_kg)])] +
+      # Emissions from cells with more than 5 miles between road and plant; this will utilize transportation 1 and 2. Transportation 1 will cover CelltoRoad and CellToRoadMod, Trans2 will cover RoadToPlant and RoadToPlantMod.
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_LessThan10[,sum(PMUnder10um_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_10To35[,sum(PMUnder10um_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_Over35[,sum(PMUnder10um_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_LessThan10[,sum(PMUnder10um_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_10To35[,sum(PMUnder10um_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_Over35[,sum(PMUnder10um_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_LessThan10[,sum(PMUnder10um_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_10To35[,sum(PMUnder10um_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_Over35[,sum(PMUnder10um_kg)])],
+
+    PMUnder2.5um_kg = PMUnder2.5um_kg +
+      # Emissions from cells with less than 5 miles between road point to plant; this will only utilize Transportation 1, and the distance is the CelltoRoad and Road to Plant.
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_LessThan10[,sum(PMUnder2.5um_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_10To35[,sum(PMUnder2.5um_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_Over35[,sum(PMUnder2.5um_kg)])] +
+      # Emissions from cells with more than 5 miles between road and plant; this will utilize transportation 1 and 2. Transportation 1 will cover CelltoRoad and CellToRoadMod, Trans2 will cover RoadToPlant and RoadToPlantMod.
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_LessThan10[,sum(PMUnder2.5um_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_10To35[,sum(PMUnder2.5um_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_Over35[,sum(PMUnder2.5um_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_LessThan10[,sum(PMUnder2.5um_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_10To35[,sum(PMUnder2.5um_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_Over35[,sum(PMUnder2.5um_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_LessThan10[,sum(PMUnder2.5um_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_10To35[,sum(PMUnder2.5um_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_Over35[,sum(PMUnder2.5um_kg)])],
+
+    SO2_kg = SO2_kg +
+      # Emissions from cells with less than 5 miles between road point to plant; this will only utilize Transportation 1, and the distance is the CelltoRoad and Road to Plant.
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_LessThan10[,sum(SO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_10To35[,sum(SO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_Over35[,sum(SO2_kg)])] +
+      # Emissions from cells with more than 5 miles between road and plant; this will utilize transportation 1 and 2. Transportation 1 will cover CelltoRoad and CellToRoadMod, Trans2 will cover RoadToPlant and RoadToPlantMod.
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_LessThan10[,sum(SO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_10To35[,sum(SO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_Over35[,sum(SO2_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_LessThan10[,sum(SO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_10To35[,sum(SO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_Over35[,sum(SO2_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_LessThan10[,sum(SO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_10To35[,sum(SO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_Over35[,sum(SO2_kg)])],
+
+    VOC_kg = VOC_kg +
+      # Emissions from cells with less than 5 miles between road point to plant; this will only utilize Transportation 1, and the distance is the CelltoRoad and Road to Plant.
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_LessThan10[,sum(VOC_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_10To35[,sum(VOC_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_Over35[,sum(VOC_kg)])] +
+      # Emissions from cells with more than 5 miles between road and plant; this will utilize transportation 1 and 2. Transportation 1 will cover CelltoRoad and CellToRoadMod, Trans2 will cover RoadToPlant and RoadToPlantMod.
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_LessThan10[,sum(VOC_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_10To35[,sum(VOC_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_Over35[,sum(VOC_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_LessThan10[,sum(VOC_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_10To35[,sum(VOC_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_Over35[,sum(VOC_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_LessThan10[,sum(VOC_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_10To35[,sum(VOC_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_Over35[,sum(VOC_kg)])]
+  )]
+
+  # Processing mass loss and mass transfer to power plant
+  # In the high volume scenario, the only residues that are NOT processed and NOT sent to the power plant are those with the merge column "Do_Not_Harvest"
+  # Step 1, populate the mass_to_plant_tonnesAcre from the recovered columns.
+  cbrec.dt[,mass_to_plant_tonnesAcre := Recovered_CWD_tonnesAcre * (1-processing.mass.loss) + Recovered_FWD_tonnesAcre * (1-processing.mass.loss) + Recovered_Foliage_tonnesAcre * (1-processing.mass.loss)]
   
-  return(list(harvest_processing_emissions,cbrec.dt))
+  warning("You commented out the code that reduces the residue base. When you are done testing equipment codes, uncomment all that.")
+  # Step 2, remove processed materials from the recovered materials. Leftover materials will be exposed to decay and wildfire. UNCOMMENT THE THREE LINES BELOW.
+  # cbrec.dt[,':='(Recovered_CWD_tonnesAcre = Recovered_CWD_tonnesAcre * processing.mass.loss,
+  #                Recovered_FWD_tonnesAcre = Recovered_FWD_tonnesAcre * processing.mass.loss,
+  #                Recovered_Foliage_tonnesAcre = Recovered_Foliage_tonnesAcre * processing.mass.loss)]
+  
+  #########################################################
+  #########################################################
+  # DEBUGGING CODE - BANANAS!
+  #########################################################
+  #########################################################
+  scenario.code.LT10 <- paste(user_inputs[variable=='treatment_type',value], Harvest.Volume, user_inputs[variable=='residue_moisture',value], user_inputs[variable=='biomass_collection',value], "LessThan10", user_inputs[variable=='harvest_comminution_opt',value],sep="")
+  scenario.code.10T35 <- paste(user_inputs[variable=='treatment_type',value], Harvest.Volume, user_inputs[variable=='residue_moisture',value], user_inputs[variable=='biomass_collection',value], "10To35", user_inputs[variable=='harvest_comminution_opt',value],sep="")
+  scenario.code.GT35 <- paste(user_inputs[variable=='treatment_type',value], Harvest.Volume, user_inputs[variable=='residue_moisture',value], user_inputs[variable=='biomass_collection',value], "35To80", user_inputs[variable=='harvest_comminution_opt',value],sep="")
+  
+  print(paste(scenario.code.LT10, paste(harvest.equipment.check.LT10, collapse = " "), paste(Trans1_LessThan10[,unique(Equipment_code)], collapse = " "), paste(TransLoad_LessThan10[,unique(Equipment_code)], collapse = " "), paste(Trans2_LessThan10[,unique(Equipment_code)], collapse = " "),sep="-"))
+  print(paste(scenario.code.10T35, paste(harvest.equipment.check.10T35, collapse = " "), paste(Trans1_10To35[,unique(Equipment_code)], collapse = " "), paste(TransLoad_10To35[,unique(Equipment_code)], collapse = " "), paste(Trans2_10To35[,unique(Equipment_code)], collapse = " "),sep="-"))
+  print(paste(scenario.code.GT35, paste(harvest.equipment.check.GT35, collapse = " "), paste(Trans1_Over35[,unique(Equipment_code)], collapse = " "), paste(TransLoad_Over35[,unique(Equipment_code)], collapse = " "), paste(Trans2_Over35[,unique(Equipment_code)], collapse = " "),sep="-"))
+  
+  return(list(harvest.processing.emissions,transportation.emissions,cbrec.dt))
 }
