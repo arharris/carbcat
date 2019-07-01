@@ -53,8 +53,8 @@ PM10_carbon_fraction <- 1/0.6
 PM2.5_carbon_fraction <- 1/0.6
 # These are currently dummy values
 warning("VOC and char carbon fractions must be confirmed.")
-VOC_carbon_fraction <- 1/0.1
-char_carbon_fraction <- 1/0.7 # Current assumption is that char is 70% carbon, based on summary of literature values.
+VOC_carbon_fraction <- 1/0.4
+char_carbon_fraction <- 1/0.71 # Current assumption is that char is 70% carbon, based on summary of literature values.
 
 # Biomass plant type will have a set percentage of unburned fuel. Build a reference table for that here
 biomass_plant_unburnt_fuel <- data.table(plant.type=c("Biomass stoker","Fluidized bed combustor","Cyclone combustor","Gasifier"),unburned.fuel.frac=c(0.035,0.0025,0.03,0.0025))

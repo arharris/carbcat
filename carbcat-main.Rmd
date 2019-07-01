@@ -28,6 +28,7 @@ user_inputs[variable=="study_area_mask_file",value:="~/Desktop/selected tile sha
 Load up emissions factor/rate data from csv files.
 ```{r}
 equipment_emissions <- data.table(read.csv(user_inputs[variable=='equipment_emissions_filepath',value]))
+warning("CO emissions factors for all plants taken from 'PowerPlantEmissionSummary.xlsx' for Current Gen Combustion Plant.")
 ```
 
 Load up the location-specific information gleaned from GIS data. 
@@ -97,6 +98,8 @@ if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   
   # Read in the residue load values from a csv file. These values are indexed by FCID_code, so that is how we will join the 2 tables
   fcid_table <- data.table(read.csv(user_inputs[variable=='residue_treatment_filepath',value]))
+  # Eliminate the TPA column
+  fcid_table[,TPA:=NULL]
   setkey(fcid_table,FCID2018)
   setkey(study_area_FCID,FCID_code)
   study_area_FCID <- study_area_FCID[fcid_table[Treatment==user_inputs[variable=='treatment_type',value]]]
@@ -257,42 +260,25 @@ study_area_FCID <- scenario_matrix[study_area_FCID]
 study_area_FCID[,':='(Recovered_Stem9Plus_tonsAcre = Recovered_Stem9Plus * Stem9Plus_tonsAcre,
                    Recovered_Stem6to9_tonsAcre = Recovered_Stem6to9 * Stem6to9_tonsAcre,
                    Recovered_Stem4to6_tonsAcre = Recovered_Stem4to6 * Stem4to6_tonsAcre,
-                   Recovered_Bark9Plus_tonsAcre = Recovered_Bark9Plus * Bark9Plus_tonsAcre,
-                   Recovered_Bark6to9_tonsAcre = Recovered_Bark6to9 * Bark6to9_tonsAcre,
-                   Recovered_Bark4to6_tonsAcre = Recovered_Bark4to6 * Bark4to6_tonsAcre,
                    Recovered_Branch_tonsAcre = Recovered_Branch * Branch_tonsAcre,
                    Recovered_Foliage_tonsAcre = Recovered_Foliage * Foliage_tonsAcre,
-                   Merchantable_Stem9Plus_tonsAcre = Merchantable_Stem9Plus * Stem9Plus_tonsAcre,
-                   Merchantable_Stem6to9_tonsAcre = Merchantable_Stem6to9 * Stem6to9_tonsAcre,
-                   Merchantable_Stem4to6_tonsAcre = Merchantable_Stem4to6 * Stem4to6_tonsAcre,
-                   Merchantable_Bark9Plus_tonsAcre = Merchantable_Bark9Plus * Bark9Plus_tonsAcre,
-                   Merchantable_Bark6to9_tonsAcre = Merchantable_Bark6to9 * Bark6to9_tonsAcre,
-                   Merchantable_Bark4to6_tonsAcre = Merchantable_Bark4to6 * Bark4to6_tonsAcre,
-                   Merchantable_Branch_tonsAcre = Merchantable_Branch * Branch_tonsAcre,
-                   Merchantable_Foliage_tonsAcre = Merchantable_Foliage * Foliage_tonsAcre,
                    Piled_Stem9Plus_tonsAcre = Piled_Stem9Plus * Stem9Plus_tonsAcre,
                    Piled_Stem6to9_tonsAcre = Piled_Stem6to9 * Stem6to9_tonsAcre,
                    Piled_Stem4to6_tonsAcre = Piled_Stem4to6 * Stem4to6_tonsAcre,
-                   Piled_Bark9Plus_tonsAcre = Piled_Bark9Plus * Bark9Plus_tonsAcre,
-                   Piled_Bark6to9_tonsAcre = Piled_Bark6to9 * Bark6to9_tonsAcre,
-                   Piled_Bark4to6_tonsAcre = Piled_Bark4to6 * Bark4to6_tonsAcre,
                    Piled_Branch_tonsAcre = Piled_Branch * Branch_tonsAcre,
                    Piled_Foliage_tonsAcre = Piled_Foliage * Foliage_tonsAcre,
                    Scattered_Stem9Plus_tonsAcre = Scattered_Stem9Plus * Stem9Plus_tonsAcre,
                    Scattered_Stem6to9_tonsAcre = Scattered_Stem6to9 * Stem6to9_tonsAcre,
                    Scattered_Stem4to6_tonsAcre = Scattered_Stem4to6 * Stem4to6_tonsAcre,
-                   Scattered_Bark9Plus_tonsAcre = Scattered_Bark9Plus * Bark9Plus_tonsAcre,
-                   Scattered_Bark6to9_tonsAcre = Scattered_Bark6to9 * Bark6to9_tonsAcre,
-                   Scattered_Bark4to6_tonsAcre = Scattered_Bark4to6 * Bark4to6_tonsAcre,
                    Scattered_Branch_tonsAcre = Scattered_Branch * Branch_tonsAcre,
                    Scattered_Foliage_tonsAcre = Scattered_Foliage * Foliage_tonsAcre
 )]
 
 # Trim out the columns we no longer need. ###### REMOVING SLOPE FOR NOW ######
+warning("This chunk of code will need to be re-written if we remove bark columns from the scenario matrix")
 study_area_FCID[,':='(Slope=NULL, Recovered_Stem9Plus = NULL, Stem9Plus_tonsAcre = NULL, Recovered_Stem6to9 = NULL, Stem6to9_tonsAcre = NULL, Recovered_Stem4to6 = NULL,
-                   Stem4to6_tonsAcre = NULL, Recovered_Bark9Plus = NULL, Bark9Plus_tonsAcre = NULL, Recovered_Bark6to9 = NULL, Bark6to9_tonsAcre = NULL,
-                   Recovered_Bark4to6 = NULL, Bark4to6_tonsAcre = NULL, Recovered_Branch = NULL, Branch_tonsAcre = NULL, Recovered_Foliage = NULL,
-                   Foliage_tonsAcre = NULL, Merchantable_Stem9Plus = NULL, Merchantable_Stem6to9 = NULL, Merchantable_Stem4to6 = NULL,  Merchantable_Bark9Plus = NULL,
+                   Stem4to6_tonsAcre = NULL, Recovered_Bark9Plus = NULL, Recovered_Bark6to9 = NULL, Recovered_Bark4to6 = NULL, Recovered_Branch = NULL, Branch_tonsAcre = NULL, 
+                   Recovered_Foliage = NULL, Foliage_tonsAcre = NULL, Merchantable_Stem9Plus = NULL, Merchantable_Stem6to9 = NULL, Merchantable_Stem4to6 = NULL,  Merchantable_Bark9Plus = NULL,
                    Merchantable_Bark6to9 = NULL, Merchantable_Bark4to6 = NULL, Merchantable_Branch = NULL, Merchantable_Foliage = NULL, Piled_Stem9Plus = NULL, 
                    Piled_Stem6to9 = NULL, Piled_Stem4to6 = NULL, Piled_Bark9Plus = NULL, Piled_Bark6to9 = NULL, Piled_Bark4to6 = NULL, Piled_Branch = NULL, Piled_Foliage = NULL,
                    Scattered_Stem9Plus = NULL, Scattered_Stem6to9 = NULL, Scattered_Stem4to6 = NULL, Scattered_Bark9Plus = NULL, Scattered_Bark6to9 = NULL,
@@ -316,6 +302,7 @@ tile_list <- as.data.frame(study_area_tiles)$ID
 # Extracting the values we need from the wildfire data is going to be long and a little messy. So I'm throwing it in a module.
 # Calculating emissions factors and combustion/char_fractions should remove the need to convert to metric - since EVERYTHING is 
 # imperial, we essentially get a massless factor, and the conversion factors will cancel out.
+warning("The fire data is all in integer format. Deal with that.")
 wildfire_data <- wildfire_processing_fun(user_inputs[variable=="wildfire_data_directory",value], scenario_ID, user_inputs[variable=='burn_type',value], tile_list)
 
 wildfire_data[,':='(x=round(x,digits=1),y=round(y,digits=1))]
@@ -326,17 +313,15 @@ Column preparation for Burn/Decay/Wildfire Emissions
 ```{r}
 # Step 1: combine all mass categories into CWD, FWD, and foliage. There will also be a duff column, though this will start empty. 
 # There will be several categories with different decay rates - recovered, scattered (including merchantable breakage), field piled, and landing piled
-study_area_FCID[,':='(Recovered_CWD_tonsAcre = Recovered_Stem9Plus_tonsAcre + Recovered_Stem6to9_tonsAcre + Recovered_Stem4to6_tonsAcre + Recovered_Bark9Plus_tonsAcre + Recovered_Bark6to9_tonsAcre + Recovered_Bark4to6_tonsAcre,
-                      Scattered_CWD_tonsAcre = Merchantable_Stem9Plus_tonsAcre + Merchantable_Stem6to9_tonsAcre + Merchantable_Stem4to6_tonsAcre + Merchantable_Bark9Plus_tonsAcre + Merchantable_Bark6to9_tonsAcre + Merchantable_Bark4to6_tonsAcre + Scattered_Stem9Plus_tonsAcre + Scattered_Stem6to9_tonsAcre + Scattered_Stem4to6_tonsAcre + Scattered_Bark9Plus_tonsAcre + Scattered_Bark6to9_tonsAcre + Scattered_Bark4to6_tonsAcre,
-                      Piled_CWD_tonsAcre = Piled_Stem9Plus_tonsAcre + Piled_Stem6to9_tonsAcre + Piled_Stem4to6_tonsAcre + Piled_Bark9Plus_tonsAcre + Piled_Bark6to9_tonsAcre + Piled_Bark4to6_tonsAcre
+study_area_FCID[,':='(Recovered_CWD_tonsAcre = Recovered_Stem9Plus_tonsAcre + Recovered_Stem6to9_tonsAcre + Recovered_Stem4to6_tonsAcre,
+                      Scattered_CWD_tonsAcre = Scattered_Stem9Plus_tonsAcre + Scattered_Stem6to9_tonsAcre + Scattered_Stem4to6_tonsAcre,
+                      Piled_CWD_tonsAcre = Piled_Stem9Plus_tonsAcre + Piled_Stem6to9_tonsAcre + Piled_Stem4to6_tonsAcre
 )]
 
 # Clear out old columns, as well as merchantable branch/foliage (which should've been empty anyway)
-study_area_FCID[,':='(Recovered_Stem9Plus_tonsAcre = NULL, Recovered_Stem6to9_tonsAcre = NULL, Recovered_Stem4to6_tonsAcre = NULL, Recovered_Bark9Plus_tonsAcre = NULL, Recovered_Bark6to9_tonsAcre = NULL, 
-                      Recovered_Bark4to6_tonsAcre = NULL, Merchantable_Stem9Plus_tonsAcre = NULL, Merchantable_Stem6to9_tonsAcre = NULL, Merchantable_Stem4to6_tonsAcre = NULL, Merchantable_Bark9Plus_tonsAcre = NULL,
-                      Merchantable_Bark6to9_tonsAcre = NULL, Merchantable_Bark4to6_tonsAcre = NULL, Merchantable_Branch_tonsAcre=NULL, Merchantable_Foliage_tonsAcre = NULL, Scattered_Stem9Plus_tonsAcre = NULL,
-                      Scattered_Stem6to9_tonsAcre = NULL, Scattered_Stem4to6_tonsAcre = NULL, Scattered_Bark9Plus_tonsAcre = NULL, Scattered_Bark6to9_tonsAcre = NULL, Scattered_Bark4to6_tonsAcre = NULL,
-                      Piled_Stem9Plus_tonsAcre = NULL, Piled_Stem6to9_tonsAcre = NULL, Piled_Stem4to6_tonsAcre = NULL, Piled_Bark9Plus_tonsAcre = NULL, Piled_Bark6to9_tonsAcre = NULL, Piled_Bark4to6_tonsAcre = NULL
+study_area_FCID[,':='(Recovered_Stem9Plus_tonsAcre = NULL, Recovered_Stem6to9_tonsAcre = NULL, Recovered_Stem4to6_tonsAcre = NULL,
+                      Scattered_Stem9Plus_tonsAcre = NULL, Scattered_Stem6to9_tonsAcre = NULL, Scattered_Stem4to6_tonsAcre = NULL,
+                      Piled_Stem9Plus_tonsAcre = NULL, Piled_Stem6to9_tonsAcre = NULL, Piled_Stem4to6_tonsAcre = NULL
 )]
 
 # The residue loading columns are currently in imperial units: tons (2000 lbs/acre), and we want it in metric (tonnes (1000 kg) /acre). 1 ton equals 0.907185 tonnes
@@ -472,54 +457,10 @@ if(user_inputs[variable=="biomass_collection",value]!="No") {
   
   # Now to determine equipment. This will vary depending on whther the harvest is high or low volume; this will be determined through average cell residue density
   
-  #########################################################
-  #########################################################
-  # DEBUGGING CODE - BANANAS!
-  #########################################################
-  #########################################################
-  # Some code to run through all the equipment options 
-  # Options for all permutations:
-  # Harvest.Volume # High Residue Volume or Small Residue Volume
-  # user_inputs[variable=='residue_moisture',value] # Dry or Green
-  # user_inputs[variable=='biomass_collection',value] # "Piles Only" or "Piles and Scattered"
-  # user_inputs[variable=='harvest_comminution_opt',value] # "chip" or "grind" 
-  # user_inputs[variable=='treatment_type',value] # Options: 'RM100', 'TFA20', 'TFB20', 'TP20', 'TFA40', 'TFB40', 'TP40', 'TFA60', 'TFB60', 'TP60', 'TFA80', 'TFB80', 'TP80'
-  
-  for (harvest.volume in c("High","Low")) { # This will contain all of the road info below
-    if(harvest.volume == "High") {
-      print("HIGH")
-      study_area_FCID <- data.table(read.csv("~/Desktop/CBREC debugging/base data csvs/1000rows_pre_harvest_HighVol.csv"))
-    } else {
-      study_area_FCID <- data.table(read.csv("~/Desktop/CBREC debugging/base data csvs/1000rows_pre_harvest.csv"))
-    }
-    
-    for (residue.moisture in c("Dry","Green")) {
-      user_inputs[variable=='residue_moisture',value:=residue.moisture]
-      
-      for (biomass.collection in c("Piles Only", "Piles and Scattered")) {
-        user_inputs[variable=='biomass_collection',value:=biomass.collection]
-        
-        for (comminution.choice in c("chip","grind")) {
-          user_inputs[variable=='harvest_comminution_opt',value:=comminution.choice]
-          
-          for (treatment.option in c("RM100", "TP20", "TP40", "TP60", "TP80")) { #c("RM100", "TFA20", "TFB20", "TP20", "TFA40", "TFB40", "TP40", "TFA60", "TFB60", "TP60", "TFA80", "TFB80", "TP80")) {
-            user_inputs[variable=='treatment_type',value:=treatment.option]
-            
-  #########################################################
-  #########################################################
-  # DEBUGGING CODE - BANANAS! Everything above.
-  #########################################################
-  #########################################################
-  
-  
-  
-  
   #######################################################################################################################################
   # Calculate harvest/processing emissions, and adjust mass totals.
   #######################################################################################################################################
   high_volume_cell_threshold_density <- 13 # BDT/scre; remember that tons/acre is the unit for all of our residues.
-  processing_mass_loss <- 0.05 # % of mass lost during processing; assumed constant for all equipment. Unprocessed mass is left to decay or be exposed to wildfire.
-  transportation_mass_loss <- 0
   
   #######################################################################################################################################
   #######################################################################################################################################
@@ -528,20 +469,7 @@ if(user_inputs[variable=="biomass_collection",value]!="No") {
   # had were for SOx and fire only reports for SO2. fuck shit damn hell.
   #######################################################################################################################################
   #######################################################################################################################################
-  print("Into harvest-processing")
-  harvest_processing_output <- harvest_processing_fun(study_area_FCID, high_volume_cell_threshold_density,processing_mass_loss,transportation_mass_loss)
-          }
-        }
-      }
-    }
-}
-  #################################################################
-  #################################################################
-  # DEBUGGING CODE - BANANAS! Remove the bracket immediately above
-  #################################################################
-  #################################################################
-  
-  
+  harvest_processing_output <- harvest_processing_fun(study_area_FCID, high_volume_cell_threshold_density)
   harvest_processing_emissions <- harvest_processing_output[[1]]
   transportation_emissions <- harvest_processing_output[[2]]
   study_area_FCID <- harvest_processing_output[[3]]
@@ -632,7 +560,7 @@ for (year.i in 1:10) {
     #######################################################################
     
     # Clear out the combustion/char fractions and emissions factors; they will be re-added with wildfire data.
-    study_area_FCID[,':='(CWD_CombustionFrac = NULL, FWD_CombustionFrac = NULL, Foliage_CombustionFrac = NULL, Duff_CombustionFrac = NULL, CWD_CharFrac = NULL, FWD_CharFrac = NULL, Duff_CH4_EmFac = NULL, Foliage_CH4_EmFac = NULL, FWD_CH4_EmFac = NULL, CWD_CH4_EmFac = NULL, Duff_CO_EmFac = NULL, Foliage_CO_EmFac = NULL, FWD_CO_EmFac = NULL, CWD_CO_EmFac = NULL, Duff_NOx_EmFac = NULL, Foliage_NOx_EmFac = NULL, FWD_NOx_EmFac = NULL, CWD_NOx_EmFac = NULL, Duff_PM10_EmFac = NULL, Foliage_PM10_EmFac = NULL, FWD_PM10_EmFac = NULL, CWD_PM10_EmFac = NULL, Duff_PM2.5_EmFac = NULL, Foliage_PM2.5_EmFac = NULL, FWD_PM2.5_EmFac = NULL, CWD_PM2.5_EmFac = NULL, Duff_SO2_EmFac = NULL, Foliage_SO2_EmFac = NULL, FWD_SO2_EmFac = NULL, CWD_SO2_EmFac = NULL, Duff_VOC_EmFac = NULL, Foliage_VOC_EmFac = NULL, FWD_VOC_EmFac = NULL, CWD_VOC_EmFac = NULL)] 
+    study_area_FCID[,':='(Wildfire_Probability = NULL, CWD_CombustionFrac = NULL, FWD_CombustionFrac = NULL, Foliage_CombustionFrac = NULL, Duff_CombustionFrac = NULL, CWD_CharFrac = NULL, FWD_CharFrac = NULL, Duff_CH4_EmFac = NULL, Foliage_CH4_EmFac = NULL, FWD_CH4_EmFac = NULL, CWD_CH4_EmFac = NULL, Duff_CO_EmFac = NULL, Foliage_CO_EmFac = NULL, FWD_CO_EmFac = NULL, CWD_CO_EmFac = NULL, Duff_NOx_EmFac = NULL, Foliage_NOx_EmFac = NULL, FWD_NOx_EmFac = NULL, CWD_NOx_EmFac = NULL, Duff_PM10_EmFac = NULL, Foliage_PM10_EmFac = NULL, FWD_PM10_EmFac = NULL, CWD_PM10_EmFac = NULL, Duff_PM2.5_EmFac = NULL, Foliage_PM2.5_EmFac = NULL, FWD_PM2.5_EmFac = NULL, CWD_PM2.5_EmFac = NULL, Duff_SO2_EmFac = NULL, Foliage_SO2_EmFac = NULL, FWD_SO2_EmFac = NULL, CWD_SO2_EmFac = NULL, Duff_VOC_EmFac = NULL, Foliage_VOC_EmFac = NULL, FWD_VOC_EmFac = NULL, CWD_VOC_EmFac = NULL)] 
   }
   
   # Figure out the emission factors, combustion fractions, and char fractions for wildfire.
@@ -647,6 +575,7 @@ for (year.i in 1:10) {
   decay_emissions <- decay_emissions + decay_output[[1]]
   study_area_FCID <- decay_output[[2]]
   
+  # AFTER YEAR 2 VERIFICATION - DELETE THIS. SCENARIO MATRIX CHANGES MEAN RECOVERED WILL ALWAYS BE 0.
   decay_output <- decay_fun(study_area_FCID,residue.disposition = "Recovered",year.i)
   decay_emissions <- decay_emissions + decay_output[[1]]
   study_area_FCID <- decay_output[[2]]
@@ -669,6 +598,7 @@ for (year.i in 1:10) {
   wildfire_emissions <- wildfire_emissions + wildfire_output[[1]]
   study_area_FCID <- wildfire_output[[2]]
   
+  # AFTER YEAR 2 VERIFICATION - DELETE THIS. SCENARIO MATRIX CHANGES MEAN RECOVERED WILL ALWAYS BE 0.
   wildfire_output <- annual_wildfire_fun(study_area_FCID,residue.disposition = "Recovered",year.i)
   wildfire_emissions <- wildfire_emissions + wildfire_output[[1]]
   study_area_FCID <- wildfire_output[[2]]
@@ -690,7 +620,7 @@ for (year.i in 1:10) {
                            )]
   
   # Clear out the combustion/char fractions and emissions factors; they will be re-added next year.
-  study_area_FCID[,':='(CWD_CombustionFrac = NULL, FWD_CombustionFrac = NULL, Foliage_CombustionFrac = NULL, Duff_CombustionFrac = NULL, CWD_CharFrac = NULL, FWD_CharFrac = NULL, Duff_CH4_EmFac = NULL, Foliage_CH4_EmFac = NULL, FWD_CH4_EmFac = NULL, CWD_CH4_EmFac = NULL, Duff_CO_EmFac = NULL, Foliage_CO_EmFac = NULL, FWD_CO_EmFac = NULL, CWD_CO_EmFac = NULL, Duff_NOx_EmFac = NULL, Foliage_NOx_EmFac = NULL, FWD_NOx_EmFac = NULL, CWD_NOx_EmFac = NULL, Duff_PM10_EmFac = NULL, Foliage_PM10_EmFac = NULL, FWD_PM10_EmFac = NULL, CWD_PM10_EmFac = NULL, Duff_PM2.5_EmFac = NULL, Foliage_PM2.5_EmFac = NULL, FWD_PM2.5_EmFac = NULL, CWD_PM2.5_EmFac = NULL, Duff_SO2_EmFac = NULL, Foliage_SO2_EmFac = NULL, FWD_SO2_EmFac = NULL, CWD_SO2_EmFac = NULL, Duff_VOC_EmFac = NULL, Foliage_VOC_EmFac = NULL, FWD_VOC_EmFac = NULL, CWD_VOC_EmFac = NULL)] 
+  study_area_FCID[,':='(Wildfire_Probability = NULL, CWD_CombustionFrac = NULL, FWD_CombustionFrac = NULL, Foliage_CombustionFrac = NULL, Duff_CombustionFrac = NULL, CWD_CharFrac = NULL, FWD_CharFrac = NULL, Duff_CH4_EmFac = NULL, Foliage_CH4_EmFac = NULL, FWD_CH4_EmFac = NULL, CWD_CH4_EmFac = NULL, Duff_CO_EmFac = NULL, Foliage_CO_EmFac = NULL, FWD_CO_EmFac = NULL, CWD_CO_EmFac = NULL, Duff_NOx_EmFac = NULL, Foliage_NOx_EmFac = NULL, FWD_NOx_EmFac = NULL, CWD_NOx_EmFac = NULL, Duff_PM10_EmFac = NULL, Foliage_PM10_EmFac = NULL, FWD_PM10_EmFac = NULL, CWD_PM10_EmFac = NULL, Duff_PM2.5_EmFac = NULL, Foliage_PM2.5_EmFac = NULL, FWD_PM2.5_EmFac = NULL, CWD_PM2.5_EmFac = NULL, Duff_SO2_EmFac = NULL, Foliage_SO2_EmFac = NULL, FWD_SO2_EmFac = NULL, CWD_SO2_EmFac = NULL, Duff_VOC_EmFac = NULL, Foliage_VOC_EmFac = NULL, FWD_VOC_EmFac = NULL, CWD_VOC_EmFac = NULL)] 
 
   
 }

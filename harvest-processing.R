@@ -29,7 +29,7 @@
 
 # Required Libraries
 
-harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.loss,transportation.mass.loss) {
+harvest_processing_fun <- function(cbrec.dt,density.threshold) {
   # The cell density threshold is applied to the entire study area; if the mean recovered cell density is less than the density threshold, we've got a low volume harvest.
   mean.study.area.density <- sum(cbrec.dt[,mean(Recovered_CWD_tonnesAcre)],cbrec.dt[,mean(Recovered_FWD_tonnesAcre)],cbrec.dt[,mean(Recovered_Foliage_tonnesAcre)])
   
@@ -50,12 +50,6 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.lo
   ##########################
   if(mean.study.area.density>density.threshold & total.recovered.residue > 1000) { 
     ##### HIGH VOLUME HARVEST #####
-    #########################################################
-    #########################################################
-    # DEBUGGING CODE - BANANAS!
-    #########################################################
-    #########################################################
-    Harvest.Volume <- "High Residue Volume"
     # After the high/low volume determination, options will vary based upon: moisture/dirt content, comminution, residue collection type, treatment type, and slope. 
     # Next, we differentiate based on residue collection.
     if(user_inputs[variable=='biomass_collection',value]=='Piles Only') {
@@ -351,14 +345,6 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.lo
             cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_10To35[,sum(VOC_kg)] +
             cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_Over35[,sum(VOC_kg)]
         )]
-        #########################################################
-        #########################################################
-        # DEBUGGING CODE - BANANAS!
-        #########################################################
-        #########################################################
-        harvest.equipment.check.LT10 <- paste(Chip_LessThan10[,unique(Equipment_code)])
-        harvest.equipment.check.10T35 <- paste(Chip_10To35[,unique(Equipment_code)])
-        harvest.equipment.check.GT35 <- paste(Chip_Over35[,unique(Equipment_code)])
         
       }
       # Processing emissions - Grinding
@@ -396,14 +382,6 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.lo
             cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(VOC_kg)] +
             cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(VOC_kg)]
         )]
-        #########################################################
-        #########################################################
-        # DEBUGGING CODE - BANANAS!
-        #########################################################
-        #########################################################
-        harvest.equipment.check.LT10 <- paste(Grind_LessThan10[,unique(Equipment_code)])
-        harvest.equipment.check.10T35 <- paste(Grind_10To35[,unique(Equipment_code)])
-        harvest.equipment.check.GT35 <- paste(Grind_Over35[,unique(Equipment_code)])
         
       }
     } else { # Dry residues; if they were not "Green" or "Dry", the module would stop and an error message thrown before now. 
@@ -441,24 +419,9 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.lo
           cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(VOC_kg)] +
           cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(VOC_kg)]
       )]
-      #########################################################
-      #########################################################
-      # DEBUGGING CODE - BANANAS!
-      #########################################################
-      #########################################################
-      harvest.equipment.check.LT10 <- paste(Grind_LessThan10[,unique(Equipment_code)])
-      harvest.equipment.check.10T35 <- paste(Grind_10To35[,unique(Equipment_code)])
-      harvest.equipment.check.GT35 <- paste(Grind_Over35[,unique(Equipment_code)])
-      
     }
   } else { 
     ##### LOW VOLUME HARVEST #####
-    #########################################################
-    #########################################################
-    # DEBUGGING CODE - BANANAS!
-    #########################################################
-    #########################################################
-    Harvest.Volume <- "Small Residue Volume"
     # After the high/low volume determination, options will vary based upon: residue collection type, treatment type and slope.
     # Unlike high volume harvests, low volume harvests do not vary based upon resdidue moisture, and the only comminution option is grinding. Because these are user variables,
     # shoot a warning message to show what up.
@@ -657,14 +620,6 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.lo
         cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(VOC_kg)] +
         cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(VOC_kg)]
       )]
-    #########################################################
-    #########################################################
-    # DEBUGGING CODE - BANANAS!
-    #########################################################
-    #########################################################
-    harvest.equipment.check.LT10 <- paste(Grind_LessThan10[,unique(Equipment_code)])
-    harvest.equipment.check.10T35 <- paste(Grind_10To35[,unique(Equipment_code)])
-    harvest.equipment.check.GT35 <- paste(Grind_Over35[,unique(Equipment_code)])
     
   }
 
@@ -819,26 +774,12 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold,processing.mass.lo
   # Processing mass loss and mass transfer to power plant
   # In the high volume scenario, the only residues that are NOT processed and NOT sent to the power plant are those with the merge column "Do_Not_Harvest"
   # Step 1, populate the mass_to_plant_tonnesAcre from the recovered columns.
-  cbrec.dt[,mass_to_plant_tonnesAcre := Recovered_CWD_tonnesAcre * (1-processing.mass.loss) + Recovered_FWD_tonnesAcre * (1-processing.mass.loss) + Recovered_Foliage_tonnesAcre * (1-processing.mass.loss)]
+  cbrec.dt[,mass_to_plant_tonnesAcre := Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre]
   
-  warning("You commented out the code that reduces the residue base. When you are done testing equipment codes, uncomment all that.")
-  # Step 2, remove processed materials from the recovered materials. Leftover materials will be exposed to decay and wildfire. UNCOMMENT THE THREE LINES BELOW.
-  # cbrec.dt[,':='(Recovered_CWD_tonnesAcre = Recovered_CWD_tonnesAcre * processing.mass.loss,
-  #                Recovered_FWD_tonnesAcre = Recovered_FWD_tonnesAcre * processing.mass.loss,
-  #                Recovered_Foliage_tonnesAcre = Recovered_Foliage_tonnesAcre * processing.mass.loss)]
-  
-  #########################################################
-  #########################################################
-  # DEBUGGING CODE - BANANAS!
-  #########################################################
-  #########################################################
-  scenario.code.LT10 <- paste(user_inputs[variable=='treatment_type',value], Harvest.Volume, user_inputs[variable=='residue_moisture',value], user_inputs[variable=='biomass_collection',value], "LessThan10", user_inputs[variable=='harvest_comminution_opt',value],sep="")
-  scenario.code.10T35 <- paste(user_inputs[variable=='treatment_type',value], Harvest.Volume, user_inputs[variable=='residue_moisture',value], user_inputs[variable=='biomass_collection',value], "10To35", user_inputs[variable=='harvest_comminution_opt',value],sep="")
-  scenario.code.GT35 <- paste(user_inputs[variable=='treatment_type',value], Harvest.Volume, user_inputs[variable=='residue_moisture',value], user_inputs[variable=='biomass_collection',value], "35To80", user_inputs[variable=='harvest_comminution_opt',value],sep="")
-  
-  print(paste(scenario.code.LT10, paste(harvest.equipment.check.LT10, collapse = " "), paste(Trans1_LessThan10[,unique(Equipment_code)], collapse = " "), paste(TransLoad_LessThan10[,unique(Equipment_code)], collapse = " "), paste(Trans2_LessThan10[,unique(Equipment_code)], collapse = " "),sep="-"))
-  print(paste(scenario.code.10T35, paste(harvest.equipment.check.10T35, collapse = " "), paste(Trans1_10To35[,unique(Equipment_code)], collapse = " "), paste(TransLoad_10To35[,unique(Equipment_code)], collapse = " "), paste(Trans2_10To35[,unique(Equipment_code)], collapse = " "),sep="-"))
-  print(paste(scenario.code.GT35, paste(harvest.equipment.check.GT35, collapse = " "), paste(Trans1_Over35[,unique(Equipment_code)], collapse = " "), paste(TransLoad_Over35[,unique(Equipment_code)], collapse = " "), paste(Trans2_Over35[,unique(Equipment_code)], collapse = " "),sep="-"))
+  # Step 2, remove processed materials from the recovered materials. Processing and transfer losses are accounted for in the scenario matrix, so this is just zeroing the recovered mass columns.
+  cbrec.dt[,':='(Recovered_CWD_tonnesAcre = 0,
+                 Recovered_FWD_tonnesAcre = 0,
+                 Recovered_Foliage_tonnesAcre = 0)]
   
   return(list(harvest.processing.emissions,transportation.emissions,cbrec.dt))
 }

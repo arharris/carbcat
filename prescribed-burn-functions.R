@@ -41,7 +41,7 @@ prescribed_burn_processing_fun <- function(cbrec.dt,wildfire.data.directory,scen
     # We'll need to load up fire data and trim unneeded columns. 
     prescribed.burn.filename <- list.files(burn.emissions.directory)[str_detect(list.files(burn.emissions.directory),paste(scenario.ID,tile,"0.rds",sep="-"))]
     new.tile <- readRDS(paste(burn.emissions.directory,prescribed.burn.filename,sep=""))
-    new.tile[,':='(fuelbed_number=NULL, FCID2018=NULL, ID=NULL, Silvicultural_Treatment=NULL, Fraction_Piled=NULL, Fraction_Scattered=NULL, Secondary_Burn=NULL, Burn_Type=NULL, Biomass_Collection=NULL, Pulp_Market=NULL, Year=NULL, total_except_pile_char=NULL, total_except_pile_CH4=NULL, total_except_pile_CO=NULL, total_except_pile_CO2=NULL, total_except_pile_NOx=NULL, total_except_pile_PM10=NULL, total_except_pile_PM2.5=NULL, total_except_pile_SO2=NULL, total_except_pile_VOC=NULL, total_pile_clean_PM10=NULL, total_pile_vdirty_PM10=NULL, total_pile_clean_PM2.5=NULL, total_pile_vdirty_PM2.5=NULL, total_pile_CH4=NULL, total_pile_CO=NULL, total_pile_CO2=NULL, total_pile_NOx=NULL, total_pile_SO2=NULL, total_pile_VOC=NULL, pile_char=NULL)]
+    # new.tile[,':='(fuelbed_number=NULL, FCID2018=NULL, ID=NULL, Silvicultural_Treatment=NULL, Fraction_Piled=NULL, Fraction_Scattered=NULL, Secondary_Burn=NULL, Burn_Type=NULL, Biomass_Collection=NULL, Pulp_Market=NULL, Year=NULL, total_except_pile_char=NULL, total_except_pile_CH4=NULL, total_except_pile_CO=NULL, total_except_pile_CO2=NULL, total_except_pile_NOx=NULL, total_except_pile_PM10=NULL, total_except_pile_PM2.5=NULL, total_except_pile_SO2=NULL, total_except_pile_VOC=NULL, total_pile_clean_PM10=NULL, total_pile_vdirty_PM10=NULL, total_pile_clean_PM2.5=NULL, total_pile_vdirty_PM2.5=NULL, total_pile_CH4=NULL, total_pile_CO=NULL, total_pile_CO2=NULL, total_pile_NOx=NULL, total_pile_SO2=NULL, total_pile_VOC=NULL, pile_char=NULL)]
     prescribed.burn.data <- rbind(prescribed.burn.data,new.tile)
     
     new.tile <- NULL
@@ -146,11 +146,11 @@ prescribed_burn_fun <- function(cbrec.dt, burn.type) {
     ######################################################################################################################################################
     ######################################################################################################################################################
     # Currently, we are assuming that 100% of piled residues are exposed to prescribed burns. Not all will burn to completion, but all is exposed.
-    # Also, we assume the combustion/char/unburned fractions for pile burns are fixed (and can be hard-coded) at 90% / 1% / 9%.
+    # Also, we assume the combustion/char/unburned fractions for pile burns are fixed (and can be hard-coded) at 90% / .1% / 9.9%.
     ######################################################################################################################################################
     ######################################################################################################################################################
     prescribed.burn.combustion.frac <- 0.9
-    prescribed.burn.char.frac <- 0.01
+    prescribed.burn.char.frac <- 0.001
     
     total.segment.carbon <- cbrec.dt[,sum(Carbon_frac * Piled_CWD_tonnesAcre, Carbon_frac * Piled_FWD_tonnesAcre, Carbon_frac * Piled_Foliage_tonnesAcre)] * cell_to_acres
     total.unburned.carbon <- total.segment.carbon * (1 - prescribed.burn.combustion.frac - prescribed.burn.char.frac)
@@ -197,31 +197,33 @@ prescribed_burn_fun <- function(cbrec.dt, burn.type) {
                    Piled_Foliage_tonnesAcre = (1 - prescribed.burn.combustion.frac) * Piled_Foliage_tonnesAcre)]
   }
   
-  if(burn.type=="Broadcast") {
+  if(burn.type=="Broadcast") { # Broadcast burn affects both piled and scattered residues
     
     # Burn type will affect residue segment affected AND emissions factors
     # CO2 emissions will be calculated as the remainder of carbon emissions after the other emissions constituents; so we will need carbon fractions as well.
     # These are kept in misc-functions.R
     
-    total.segment.carbon <- cbrec.dt[,sum((Scattered_CWD_tonnesAcre + Recovered_CWD_tonnesAcre) * Carbon_frac,
-                                            (Scattered_FWD_tonnesAcre + Recovered_FWD_tonnesAcre) * Carbon_frac,
-                                            (Scattered_Foliage_tonnesAcre + Recovered_Foliage_tonnesAcre) * Carbon_frac)] * cell_to_acres
+    total.segment.carbon <- cbrec.dt[,sum(Scattered_CWD_tonnesAcre * Carbon_frac,
+                                          Scattered_FWD_tonnesAcre * Carbon_frac,
+                                          Scattered_Foliage_tonnesAcre * Carbon_frac)] * cell_to_acres
+
+    total.unburned.carbon <- cbrec.dt[,sum(Scattered_CWD_tonnesAcre * Carbon_frac * (1 - CWD_CombustionFrac - CWD_CharFrac),
+                                           Scattered_FWD_tonnesAcre * Carbon_frac * (1 - FWD_CombustionFrac - FWD_CharFrac),
+                                           Scattered_Foliage_tonnesAcre * Carbon_frac * (1 - Foliage_CombustionFrac))] * cell_to_acres
     
-    total.unburned.carbon <- cbrec.dt[,sum((Scattered_CWD_tonnesAcre + Recovered_CWD_tonnesAcre) * Carbon_frac * (1 - CWD_CombustionFrac - CWD_CharFrac),
-                                           (Scattered_FWD_tonnesAcre + Recovered_FWD_tonnesAcre) * Carbon_frac * (1 - FWD_CombustionFrac - FWD_CharFrac),
-                                           (Scattered_Foliage_tonnesAcre + Recovered_Foliage_tonnesAcre) * Carbon_frac * (1 - Foliage_CombustionFrac))] * cell_to_acres
+
     
     # Any residue left unburnt can still be exposed to wildfire, so we can leave it in the original columns. Add combustion emissions to the emissions 
     # columns, and then adjust the dynamic mass column. Repeat for char. DUFF WILL NOT BE GENERATED YET, SO WE DON'T NEED TO WORRY ABOUT IT.
     # Calculate the other carbon emissions before CO2, the remainder will be lost as CO2.
-    CO.emissions.year.i <- cbrec.dt[,sum((Scattered_CWD_tonnesAcre + Recovered_CWD_tonnesAcre) * CWD_CO_EmFac + (Scattered_FWD_tonnesAcre + Recovered_FWD_tonnesAcre) * FWD_CO_EmFac + (Scattered_Foliage_tonnesAcre + Recovered_Foliage_tonnesAcre) * Foliage_CO_EmFac)] * cell_to_acres
-    CH4.emissions.year.i <- cbrec.dt[,sum((Scattered_CWD_tonnesAcre + Recovered_CWD_tonnesAcre) * CWD_CH4_EmFac + (Scattered_FWD_tonnesAcre + Recovered_FWD_tonnesAcre) * FWD_CH4_EmFac + (Scattered_Foliage_tonnesAcre + Recovered_Foliage_tonnesAcre) * Foliage_CH4_EmFac)] * cell_to_acres
-    NOx.emissions.year.i <- cbrec.dt[,sum((Scattered_CWD_tonnesAcre + Recovered_CWD_tonnesAcre) * CWD_NOx_EmFac + (Scattered_FWD_tonnesAcre + Recovered_FWD_tonnesAcre) * FWD_NOx_EmFac + (Scattered_Foliage_tonnesAcre + Recovered_Foliage_tonnesAcre) * Foliage_NOx_EmFac)] * cell_to_acres
-    PM10.emissions.year.i <- cbrec.dt[,sum((Scattered_CWD_tonnesAcre + Recovered_CWD_tonnesAcre) * CWD_PM10_EmFac + (Scattered_FWD_tonnesAcre + Recovered_FWD_tonnesAcre) * FWD_PM10_EmFac + (Scattered_Foliage_tonnesAcre + Recovered_Foliage_tonnesAcre) * Foliage_PM10_EmFac)] * cell_to_acres
-    PM2.5.emissions.year.i <- cbrec.dt[,sum((Scattered_CWD_tonnesAcre + Recovered_CWD_tonnesAcre) * CWD_PM2.5_EmFac + (Scattered_FWD_tonnesAcre + Recovered_FWD_tonnesAcre) * FWD_PM2.5_EmFac + (Scattered_Foliage_tonnesAcre + Recovered_Foliage_tonnesAcre) * Foliage_PM2.5_EmFac)] * cell_to_acres
-    SO2.emissions.year.i <- cbrec.dt[,sum((Scattered_CWD_tonnesAcre + Recovered_CWD_tonnesAcre) * CWD_SO2_EmFac + (Scattered_FWD_tonnesAcre + Recovered_FWD_tonnesAcre) * FWD_SO2_EmFac + (Scattered_Foliage_tonnesAcre + Recovered_Foliage_tonnesAcre) * Foliage_SO2_EmFac)] * cell_to_acres
-    VOC.emissions.year.i <- cbrec.dt[,sum((Scattered_CWD_tonnesAcre + Recovered_CWD_tonnesAcre) * CWD_VOC_EmFac + (Scattered_FWD_tonnesAcre + Recovered_FWD_tonnesAcre) * FWD_VOC_EmFac + (Scattered_Foliage_tonnesAcre + Recovered_Foliage_tonnesAcre) * Foliage_VOC_EmFac)] * cell_to_acres
-    char.year.i <- cbrec.dt[,sum((Scattered_CWD_tonnesAcre + Recovered_CWD_tonnesAcre) * CWD_CharFrac + (Scattered_FWD_tonnesAcre + Recovered_FWD_tonnesAcre) * FWD_CharFrac)] * cell_to_acres # No foliage char
+    CO.emissions.year.i <- cbrec.dt[,sum(Scattered_CWD_tonnesAcre * CWD_CO_EmFac + Scattered_FWD_tonnesAcre * FWD_CO_EmFac + Scattered_Foliage_tonnesAcre * Foliage_CO_EmFac)] * cell_to_acres
+    CH4.emissions.year.i <- cbrec.dt[,sum(Scattered_CWD_tonnesAcre * CWD_CH4_EmFac + Scattered_FWD_tonnesAcre * FWD_CH4_EmFac + Scattered_Foliage_tonnesAcre * Foliage_CH4_EmFac)] * cell_to_acres
+    NOx.emissions.year.i <- cbrec.dt[,sum(Scattered_CWD_tonnesAcre * CWD_NOx_EmFac + Scattered_FWD_tonnesAcre * FWD_NOx_EmFac + Scattered_Foliage_tonnesAcre * Foliage_NOx_EmFac)] * cell_to_acres
+    PM10.emissions.year.i <- cbrec.dt[,sum(Scattered_CWD_tonnesAcre * CWD_PM10_EmFac + Scattered_FWD_tonnesAcre * FWD_PM10_EmFac + Scattered_Foliage_tonnesAcre * Foliage_PM10_EmFac)] * cell_to_acres
+    PM2.5.emissions.year.i <- cbrec.dt[,sum(Scattered_CWD_tonnesAcre * CWD_PM2.5_EmFac + Scattered_FWD_tonnesAcre * FWD_PM2.5_EmFac + Scattered_Foliage_tonnesAcre * Foliage_PM2.5_EmFac)] * cell_to_acres
+    SO2.emissions.year.i <- cbrec.dt[,sum(Scattered_CWD_tonnesAcre * CWD_SO2_EmFac + Scattered_FWD_tonnesAcre * FWD_SO2_EmFac + Scattered_Foliage_tonnesAcre * Foliage_SO2_EmFac)] * cell_to_acres
+    VOC.emissions.year.i <- cbrec.dt[,sum(Scattered_CWD_tonnesAcre * CWD_VOC_EmFac + Scattered_FWD_tonnesAcre * FWD_VOC_EmFac + Scattered_Foliage_tonnesAcre * Foliage_VOC_EmFac)] * cell_to_acres
+    char.year.i <- cbrec.dt[,sum(Scattered_CWD_tonnesAcre * CWD_CharFrac + Scattered_FWD_tonnesAcre * FWD_CharFrac)] * cell_to_acres # No foliage char
     
     prescribed_burn_emissions[,':='(CO_tonnes = CO_tonnes + CO.emissions.year.i,
                                     CH4_tonnes = CH4_tonnes + CH4.emissions.year.i,
@@ -248,9 +250,9 @@ prescribed_burn_fun <- function(cbrec.dt, burn.type) {
     cbrec.dt[,':='(Scattered_CWD_tonnesAcre = (1 - CWD_CombustionFrac - CWD_CharFrac) * Scattered_CWD_tonnesAcre,
                    Scattered_FWD_tonnesAcre = (1 - FWD_CombustionFrac - FWD_CharFrac) * Scattered_FWD_tonnesAcre,
                    Scattered_Foliage_tonnesAcre = (1 - Foliage_CombustionFrac) * Scattered_Foliage_tonnesAcre,
-                   Recovered_CWD_tonnesAcre = (1 - CWD_CombustionFrac - CWD_CharFrac) * Recovered_CWD_tonnesAcre,
-                   Recovered_FWD_tonnesAcre = (1 - FWD_CombustionFrac - FWD_CharFrac) * Recovered_FWD_tonnesAcre,
-                   Recovered_Foliage_tonnesAcre = (1 - Foliage_CombustionFrac) * Recovered_Foliage_tonnesAcre
+                   Piled_CWD_tonnesAcre = (1 - CWD_CombustionFrac - CWD_CharFrac) * Piled_CWD_tonnesAcre,
+                   Piled_FWD_tonnesAcre = (1 - FWD_CombustionFrac - FWD_CharFrac) * Piled_FWD_tonnesAcre,
+                   Piled_Foliage_tonnesAcre = (1 - Foliage_CombustionFrac) * Piled_Foliage_tonnesAcre
               )]
   }
   

@@ -29,7 +29,7 @@
 # Global constants
 duff_decay_mass_fraction <- 0.02
 duff_k_val <- 0.002
-CH4_decay_emissions_factor <- 0.05 # Mass CH4 emitted/mass biomass decayed.
+CH4_decay_emissions_fraction <- 0.05 # mass of carbon decayed that will be decayed as methane; the rest will be decayed as CO2
 
 # Multi-Year Decay
 # -------------------------------------------------------------------------------------------------
@@ -68,7 +68,7 @@ multi_year_decay_fun <- function(residue, k_val, t) {
 # -------------------------------------------------------------------------------------------------
 one_year_decay_fun <- function(residue, k_val) {
   
-  return(residue * (exp(-k_val)))
+  return(residue * (1 - (exp(-k_val))))
   
 }
 
@@ -159,12 +159,12 @@ decay_fun <- function(cbrec.dt,residue.disposition,year.i) {
   }
   
   
-    # Calculate emissions - decay will generate CO2 and CH4, all other species are 0.
+  # Calculate emissions - decay will generate CO2 and CH4, all other species are 0. Emissions will be based on the amount of carbon decayed.
   # CH4 
-  decay_emissions_profile[,CH4_tonnes := CH4_tonnes + cbrec.dt[,sum(decay_CWD_mass_year_i + decay_FWD_mass_year_i + decay_Foliage_mass_year_i)] * (1-duff_decay_mass_fraction) * cell_to_acres * CH4_decay_emissions_factor]
+  decay_emissions_profile[,CH4_tonnes := CH4_tonnes + cbrec.dt[,sum((decay_CWD_mass_year_i + decay_FWD_mass_year_i + decay_Foliage_mass_year_i)*Carbon_frac)] * (1-duff_decay_mass_fraction) * cell_to_acres * CH4_decay_emissions_fraction * CH4_carbon_fraction]
   
   # CO2 Any carbon not emitted as CH4 will be as CO2.
-  decay_emissions_profile[, CO2_tonnes := CO2_tonnes + cbrec.dt[,sum((decay_CWD_mass_year_i + decay_FWD_mass_year_i + decay_Foliage_mass_year_i) * (Carbon_frac - CH4_decay_emissions_factor / CH4_carbon_fraction))] * (1-duff_decay_mass_fraction) * cell_to_acres * CO2_carbon_fraction]
+  decay_emissions_profile[,CO2_tonnes := CO2_tonnes + cbrec.dt[,sum((decay_CWD_mass_year_i + decay_FWD_mass_year_i + decay_Foliage_mass_year_i)*Carbon_frac)] * (1-duff_decay_mass_fraction) * cell_to_acres * (1 - CH4_decay_emissions_fraction) * CO2_carbon_fraction]
   
   return(list(decay_emissions_profile,cbrec.dt))
 }
@@ -188,14 +188,15 @@ decay_fun <- function(cbrec.dt,residue.disposition,year.i) {
 
 duff_decay_fun <- function(cbrec.dt,year.i) {
   decay_emissions_profile <- data.table(CO2_tonnes=0, CO_tonnes=0, CH4_tonnes=0, NOx_tonnes=0, PMUnder10um_tonnes=0, PMUnder2.5um_tonnes=0, SO2_tonnes=0, VOC_tonnes=0, char_tonnes=0)
+  
   # We should have accumulated duff from all residues prior to calling this function. Now we can decay duff, add the resulting emissions, and adjust duff mass totals
-  decay_emissions_profile[,CH4_tonnes := CH4_tonnes + cbrec.dt[,sum(one_year_decay_fun(Duff_tonnesAcre,duff_k_val))] * cell_to_acres * CH4_decay_emissions_factor]
-  decay_emissions_profile[, CO2_tonnes := CO2_tonnes + cbrec.dt[,sum(one_year_decay_fun(Duff_tonnesAcre,duff_k_val) * (Carbon_frac - CH4_decay_emissions_factor / CH4_carbon_fraction))] * cell_to_acres * CO2_carbon_fraction]
+  decay_emissions_profile[,CH4_tonnes := CH4_tonnes + cbrec.dt[,sum(one_year_decay_fun(Duff_tonnesAcre,duff_k_val) * Carbon_frac)] * cell_to_acres * CH4_decay_emissions_fraction * CH4_carbon_fraction]
+  decay_emissions_profile[,CO2_tonnes := CO2_tonnes + cbrec.dt[,sum(one_year_decay_fun(Duff_tonnesAcre,duff_k_val) * Carbon_frac)] * cell_to_acres * (1-CH4_decay_emissions_fraction) * CO2_carbon_fraction]
   cbrec.dt[,Duff_tonnesAcre := Duff_tonnesAcre - one_year_decay_fun(Duff_tonnesAcre,duff_k_val)]
   
   # Repeat for previously fired duff.
-  decay_emissions_profile[,CH4_tonnes := CH4_tonnes + cbrec.dt[,sum(one_year_decay_fun(prev_fired_Duff_tonnesAcre,duff_k_val))] * cell_to_acres * CH4_decay_emissions_factor]
-  decay_emissions_profile[, CO2_tonnes := CO2_tonnes + cbrec.dt[,sum(one_year_decay_fun(prev_fired_Duff_tonnesAcre,duff_k_val) * (Carbon_frac - CH4_decay_emissions_factor / CH4_carbon_fraction))] * cell_to_acres * CO2_carbon_fraction]
+  decay_emissions_profile[,CH4_tonnes := CH4_tonnes + cbrec.dt[,sum(one_year_decay_fun(prev_fired_Duff_tonnesAcre,duff_k_val) * Carbon_frac)] * cell_to_acres * CH4_decay_emissions_fraction * CH4_carbon_fraction]
+  decay_emissions_profile[,CO2_tonnes := CO2_tonnes + cbrec.dt[,sum(one_year_decay_fun(prev_fired_Duff_tonnesAcre,duff_k_val) * Carbon_frac)] * cell_to_acres * (1-CH4_decay_emissions_fraction) * CO2_carbon_fraction]
   cbrec.dt[,prev_fired_Duff_tonnesAcre := prev_fired_Duff_tonnesAcre - one_year_decay_fun(prev_fired_Duff_tonnesAcre,duff_k_val)]
   
   return(list(decay_emissions_profile,cbrec.dt))

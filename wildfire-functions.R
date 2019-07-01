@@ -40,6 +40,13 @@ wildfire_processing_fun <- function(wildfire.data.directory,scenario.ID, prescri
   wildfire_data_year100 <- data.table()
   
   # Cycle through tile_list, load the .rds files, and combine into a single data table.
+  #######################################################################################
+  # Wildfire data will be stored as integer values, and all mass is in grams. However, as
+  # all of our calculations are mass ratios, and R apparently assumes floating point
+  # division unless specifically instructed otherwise, no conversions to tonnes or flaot
+  # is needed.
+  #######################################################################################
+  
   # If there was a prescribed burn, then we will use the "second" file for year 0 emissions. Otherwise, there will only be a "first" file for year 0.
   if(prescribed.burn=='No') {
     for (tile in tile.list) {
