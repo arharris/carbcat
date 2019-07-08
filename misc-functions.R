@@ -31,6 +31,11 @@ load.libraries <- function (needed.packs, quietly = T)
   }
 }
 
+# Most of our packages are loaded in the main script, but some of the static variables work best as data tables.
+# So we are loading data.table here.
+load.libraries("data.table")
+warning("Legitimate question I should not answer: do we want a clear list of required libraries at the start of the main script, or can we trust R error messages to let people know they need data table?\n\n")
+
 #####################################################################################
 # %notin%: converse of "%in%" function, identifies when one item is not in a target
 # object. Use: "a" %notin% c("b","c","d") will yiled TRUE.
@@ -55,6 +60,10 @@ PM2.5_carbon_fraction <- 1/0.6
 warning("VOC and char carbon fractions must be confirmed.")
 VOC_carbon_fraction <- 1/0.4
 char_carbon_fraction <- 1/0.71 # Current assumption is that char is 70% carbon, based on summary of literature values.
+
+# Also, we assume the combustion/char/unburned fractions for pile burns are fixed (and can be hard-coded) at 90% / .1% / 9.9%. This holds for all size classes.
+pile.burn.combustion.frac <- 0.9
+pile.burn.char.frac <- 0.001
 
 # Biomass plant type will have a set percentage of unburned fuel. Build a reference table for that here
 biomass_plant_unburnt_fuel <- data.table(plant.type=c("Biomass stoker","Fluidized bed combustor","Cyclone combustor","Gasifier"),unburned.fuel.frac=c(0.035,0.0025,0.03,0.0025))
