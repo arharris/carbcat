@@ -204,10 +204,8 @@ prescribed_burn_fun <- function(cbrec.dt, burn.type) {
     prescribed_burn_emissions[,CO2_tonnes := CO2_tonnes + (total.combusted.carbon - non.CO2.combusted.carbon) * CO2_carbon_fraction]
     
     # Apply the mass lost to the dynamic mass columns. 
-    # Any piled materials remaining after a prescribed burn are converted to scattered residues.
-    cbrec.dt[,':='(Scattered_CWD_tonnesAcre = Scattered_CWD_tonnesAcre + (1 - pile.burn.combustion.frac - pile.burn.char.frac) * Piled_CWD_tonnesAcre,
-                   Scattered_FWD_tonnesAcre = Scattered_FWD_tonnesAcre + (1 - pile.burn.combustion.frac - pile.burn.char.frac) * Piled_FWD_tonnesAcre,
-                   Scattered_Foliage_tonnesAcre = Scattered_Foliage_tonnesAcre + (1 - pile.burn.combustion.frac - pile.burn.char.frac) * Piled_Foliage_tonnesAcre)]
+    # Any piled materials remaining after a prescribed burn are converted to CWD scattered residues, as per the fire model. This is an inconsistency (it transmutes fines and foliage to coarse); this is a version 1.2 change
+    cbrec.dt[,Scattered_CWD_tonnesAcre := Scattered_CWD_tonnesAcre + (1 - pile.burn.combustion.frac - pile.burn.char.frac) * (Piled_CWD_tonnesAcre + Piled_FWD_tonnesAcre + Piled_Foliage_tonnesAcre)]
     
     cbrec.dt[,':='(Piled_CWD_tonnesAcre = 0,
                    Piled_FWD_tonnesAcre = 0,
@@ -266,10 +264,7 @@ prescribed_burn_fun <- function(cbrec.dt, burn.type) {
     # Apply the mass lost to the dynamic mass columns. 
     cbrec.dt[,':='(Scattered_CWD_tonnesAcre = (1 - CWD_Scattered_CombustionFrac - CWD_Scattered_CharFrac) * Scattered_CWD_tonnesAcre,
                    Scattered_FWD_tonnesAcre = (1 - FWD_Scattered_CombustionFrac - FWD_Scattered_CharFrac) * Scattered_FWD_tonnesAcre,
-                   Scattered_Foliage_tonnesAcre = (1 - Foliage_Scattered_CombustionFrac) * Scattered_Foliage_tonnesAcre,
-                   Piled_CWD_tonnesAcre = (1 - CWD_Scattered_CombustionFrac - CWD_Scattered_CharFrac) * Piled_CWD_tonnesAcre,
-                   Piled_FWD_tonnesAcre = (1 - FWD_Scattered_CombustionFrac - FWD_Scattered_CharFrac) * Piled_FWD_tonnesAcre,
-                   Piled_Foliage_tonnesAcre = (1 - Foliage_Scattered_CombustionFrac) * Piled_Foliage_tonnesAcre
+                   Scattered_Foliage_tonnesAcre = (1 - Foliage_Scattered_CombustionFrac) * Scattered_Foliage_tonnesAcre
               )]
   }
   

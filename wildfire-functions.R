@@ -48,7 +48,7 @@ wildfire_processing_fun <- function(wildfire.data.directory,scenario.ID, prescri
   #######################################################################################
   
   # If there was a prescribed burn, then we will use the "second" file for year 0 emissions. Otherwise, there will only be a "first" file for year 0.
-  if(prescribed.burn=='No') {
+  if(prescribed.burn=='None') {
     for (tile in tile.list) {
       # For each year (0, 25, 50, 75, or 100), we'll need to load up wildfire data, trim unneeded columns and rename the non-ID columns to include the year. 
       wildfire_filename_year0 <- list.files(burn.emissions.directory)[str_detect(list.files(burn.emissions.directory),paste(scenario.ID,tile,"0.rds",sep="-"))]
@@ -604,7 +604,7 @@ annual_fire_detail_fun <- function(cbrec.dt, year.i, wildfire.data, wildfire.dat
                         Foliage_Scattered_VOC_EmFac = (Foliage_year50_Scattered_VOC_EmFac - Foliage_year25_Scattered_VOC_EmFac)/25 * (year.i-25) + Foliage_year25_Scattered_VOC_EmFac, 
                         FWD_Scattered_VOC_EmFac = (FWD_year50_Scattered_VOC_EmFac - FWD_year25_Scattered_VOC_EmFac)/25 * (year.i-25) + FWD_year25_Scattered_VOC_EmFac, 
                         CWD_Scattered_VOC_EmFac = (CWD_year50_Scattered_VOC_EmFac - CWD_year25_Scattered_VOC_EmFac)/25 * (year.i-25) + CWD_year25_Scattered_VOC_EmFac,
-                        Piled_VOC_EmFac = (Piled_year50_VOC_EmFac - Piled_year25_VOC_EmFac)/25 * (year.i-25) + Piled_year25_VOC_EmFac,
+                        Piled_VOC_EmFac = (Piled_year50_VOC_EmFac - Piled_year25_VOC_EmFac)/25 * (year.i-25) + Piled_year25_VOC_EmFac
                         )]
   }
   if(year.i==50) {
@@ -678,7 +678,7 @@ annual_fire_detail_fun <- function(cbrec.dt, year.i, wildfire.data, wildfire.dat
                         Duff_Scattered_PM10_EmFac = Duff_year75_Scattered_PM10_EmFac, Foliage_Scattered_PM10_EmFac = Foliage_year75_Scattered_PM10_EmFac, FWD_Scattered_PM10_EmFac = FWD_year75_Scattered_PM10_EmFac, CWD_Scattered_PM10_EmFac = CWD_year75_Scattered_PM10_EmFac, Piled_PM10_EmFac = Piled_year75_PM10_EmFac,
                         Duff_Scattered_PM2.5_EmFac = Duff_year75_Scattered_PM2.5_EmFac, Foliage_Scattered_PM2.5_EmFac = Foliage_year75_Scattered_PM2.5_EmFac, FWD_year75_Scattered_PM2.5_EmFac = FWD_year75_Scattered_PM2.5_EmFac, CWD_Scattered_PM2.5_EmFac = CWD_year75_Scattered_PM2.5_EmFac, Piled_PM2.5_EmFac = Piled_year75_PM2.5_EmFac,
                         Duff_Scattered_SO2_EmFac = Duff_year75_Scattered_SO2_EmFac, Foliage_Scattered_SO2_EmFac = Foliage_year75_Scattered_SO2_EmFac, FWD_Scattered_SO2_EmFac = FWD_year75_Scattered_SO2_EmFac, CWD_Scattered_SO2_EmFac = CWD_year75_Scattered_SO2_EmFac, Piled_SO2_EmFac = Piled_year75_SO2_EmFac,
-                        Duff_Scattered_VOC_EmFac = Duff_year75_Scattered_VOC_EmFac, Foliage_Scattered_VOC_EmFac = Foliage_year75_Scattered_VOC_EmFac, FWD_Scattered_VOC_EmFac = FWD_year75_Scattered_VOC_EmFac, CWD_Scattered_VOC_EmFac = CWD_year75_Scattered_VOC_EmFac, Piled_VOC_EmFac = Piled_year75_VOC_EmFac,)]
+                        Duff_Scattered_VOC_EmFac = Duff_year75_Scattered_VOC_EmFac, Foliage_Scattered_VOC_EmFac = Foliage_year75_Scattered_VOC_EmFac, FWD_Scattered_VOC_EmFac = FWD_year75_Scattered_VOC_EmFac, CWD_Scattered_VOC_EmFac = CWD_year75_Scattered_VOC_EmFac, Piled_VOC_EmFac = Piled_year75_VOC_EmFac)]
   }
   if(year.i>75&year.i<100){
     wildfire.data[,':='(CWD_Scattered_CombustionFrac = (CWD_year100_Scattered_CombustionFrac - CWD_year75_Scattered_CombustionFrac)/25 * (year.i-75) + CWD_year75_Scattered_CombustionFrac,
@@ -739,7 +739,7 @@ annual_fire_detail_fun <- function(cbrec.dt, year.i, wildfire.data, wildfire.dat
                         Duff_Scattered_PM10_EmFac = Duff_year100_Scattered_PM10_EmFac, Foliage_Scattered_PM10_EmFac = Foliage_year100_Scattered_PM10_EmFac, FWD_Scattered_PM10_EmFac = FWD_year100_Scattered_PM10_EmFac, CWD_Scattered_PM10_EmFac = CWD_year100_Scattered_PM10_EmFac, Piled_PM10_EmFac = Piled_year100_PM10_EmFac,
                         Duff_Scattered_PM2.5_EmFac = Duff_year100_Scattered_PM2.5_EmFac, Foliage_Scattered_PM2.5_EmFac = Foliage_year100_Scattered_PM2.5_EmFac, FWD_year100_Scattered_PM2.5_EmFac = FWD_year100_Scattered_PM2.5_EmFac, CWD_Scattered_PM2.5_EmFac = CWD_year100_Scattered_PM2.5_EmFac, Piled_PM2.5_EmFac = Piled_year100_PM2.5_EmFac,
                         Duff_Scattered_SO2_EmFac = Duff_year100_Scattered_SO2_EmFac, Foliage_Scattered_SO2_EmFac = Foliage_year100_Scattered_SO2_EmFac, FWD_Scattered_SO2_EmFac = FWD_year100_Scattered_SO2_EmFac, CWD_Scattered_SO2_EmFac = CWD_year100_Scattered_SO2_EmFac, Piled_SO2_EmFac = Piled_year100_SO2_EmFac,
-                        Duff_Scattered_VOC_EmFac = Duff_year100_Scattered_VOC_EmFac, Foliage_Scattered_VOC_EmFac = Foliage_year100_Scattered_VOC_EmFac, FWD_Scattered_VOC_EmFac = FWD_year100_Scattered_VOC_EmFac, CWD_Scattered_VOC_EmFac = CWD_year100_Scattered_VOC_EmFac, Piled_VOC_EmFac = Piled_year100_VOC_EmFac,)]
+                        Duff_Scattered_VOC_EmFac = Duff_year100_Scattered_VOC_EmFac, Foliage_Scattered_VOC_EmFac = Foliage_year100_Scattered_VOC_EmFac, FWD_Scattered_VOC_EmFac = FWD_year100_Scattered_VOC_EmFac, CWD_Scattered_VOC_EmFac = CWD_year100_Scattered_VOC_EmFac, Piled_VOC_EmFac = Piled_year100_VOC_EmFac)]
   }
   # Trim just what we need from wildfire.data; we will merge this with cbrec.dt and export the updated cbrec.dt.
   merge.wildfire.data <- wildfire.data[,list(x, y, CWD_Scattered_CombustionFrac, FWD_Scattered_CombustionFrac, Foliage_Scattered_CombustionFrac, Duff_Scattered_CombustionFrac, CWD_Scattered_CharFrac, FWD_Scattered_CharFrac, Duff_Scattered_CH4_EmFac, Foliage_Scattered_CH4_EmFac, FWD_Scattered_CH4_EmFac, CWD_Scattered_CH4_EmFac, Piled_CH4_EmFac, Duff_Scattered_CO_EmFac, Foliage_Scattered_CO_EmFac, FWD_Scattered_CO_EmFac, CWD_Scattered_CO_EmFac, Piled_CO_EmFac, Duff_Scattered_NOx_EmFac, Foliage_Scattered_NOx_EmFac, FWD_Scattered_NOx_EmFac, CWD_Scattered_NOx_EmFac, Piled_NOx_EmFac, Duff_Scattered_PM10_EmFac, Foliage_Scattered_PM10_EmFac, FWD_Scattered_PM10_EmFac, CWD_Scattered_PM10_EmFac, Piled_PM10_EmFac, Duff_Scattered_PM2.5_EmFac, Foliage_Scattered_PM2.5_EmFac, FWD_Scattered_PM2.5_EmFac, CWD_Scattered_PM2.5_EmFac, Piled_PM2.5_EmFac, Duff_Scattered_SO2_EmFac, Foliage_Scattered_SO2_EmFac, FWD_Scattered_SO2_EmFac, CWD_Scattered_SO2_EmFac, Piled_SO2_EmFac, Duff_Scattered_VOC_EmFac, Foliage_Scattered_VOC_EmFac, FWD_Scattered_VOC_EmFac, CWD_Scattered_VOC_EmFac, Piled_VOC_EmFac)]
@@ -832,11 +832,7 @@ annual_wildfire_fun <- function(cbrec.dt, residue.disposition, year.i) {
     wildfire_emissions_profile[,CO2_tonnes := CO2_tonnes + (total.wildfire.exposed.carbon - total.unburned.carbon - char.carbon - non.CO2.combusted.carbon) * CO2_carbon_fraction]
     
     # And address unburned residue
-    cbrec.dt[,':='(prev_fired_CWD_tonnesAcre = prev_fired_CWD_tonnesAcre + ((1 - pile.burn.combustion.frac - pile.burn.char.frac) * fire_exposed_CWD_mass_year_i),
-                   prev_fired_FWD_tonnesAcre = prev_fired_FWD_tonnesAcre + ((1 - pile.burn.combustion.frac - pile.burn.char.frac) * fire_exposed_FWD_mass_year_i),
-                   prev_fired_Foliage_tonnesAcre = prev_fired_Foliage_tonnesAcre + ((1 - pile.burn.combustion.frac - pile.burn.char.frac) * fire_exposed_Foliage_mass_year_i)
-    )]
-    warning("We currently assume in CBREC that previously fired piled materials will decay as scattered materials.")
+    cbrec.dt[,prev_fired_CWD_tonnesAcre := prev_fired_CWD_tonnesAcre + ((1 - pile.burn.combustion.frac - pile.burn.char.frac) * (fire_exposed_CWD_mass_year_i + fire_exposed_FWD_mass_year_i + fire_exposed_Foliage_mass_year_i))]
   } else {
     # In addition to needing the mass of unburnt fuel (for prev_fired, which we will address later), we need to know the amount of unburned carbon to calculate the carbon emissions.
     total.unburned.carbon <- cbrec.dt[,sum(fire_exposed_CWD_mass_year_i * Carbon_frac * (1 - CWD_Scattered_CombustionFrac - CWD_Scattered_CharFrac),

@@ -1,52 +1,52 @@
 This script will contain the main code for CARBCAT, while calling on separate modules for
 model segments.
 
-Source relevant module and function files.
 ```{r}
+###############################################
+# Source relevant module and function files.
+###############################################
 source("harvest-processing.R")
 source("prescribed-burn-functions.R")
 source("decay-functions.R")
 source('wildfire-functions.R')
 source('power-plant-functions.R')
 source("misc-functions.R")
-```
 
-Load needed library functions
-```{r}
+###############################################
+# Load needed library functions
+###############################################
 load.libraries(c("raster","rgdal","rgeos","tidyverse","beepr")) # beepr is for testing
-```
 
-To make multiple runs with different options, easier, we're putting all user options and filepaths in an external csv file,
-which we read in here.
-```{r}
-user_input_filepath <- '/Volumes/744GB-Storage/Dropbox/serc/carbcat/cbrec_inputs.csv'
+#############################################################################################################################################
+# To make multiple runs with different options, easier, we're putting all user options and filepaths in an external csv file,
+# which we read in here.
+#############################################################################################################################################
+user_input_filepath <- '/Volumes/744GB-Storage/Dropbox/serc/carbcat/cbrec_inputs_261.csv'
 user_inputs <- data.table(read.csv(user_input_filepath, stringsAsFactors = FALSE))
-```
-user_inputs[variable=="study_area_mask_file",value:="~/Desktop/selected tile shapefiles/column4.shp"]
+initial_user_inputs <- copy(user_inputs)
 
-
-Load up emissions factor/rate data from csv files.
-```{r}
+#####################################################
+# Load up emissions factor/rate data from csv files.
+#####################################################
 equipment_emissions <- data.table(read.csv(user_inputs[variable=='equipment_emissions_filepath',value]))
 warning("CO emissions factors for all plants taken from 'PowerPlantEmissionSummary.xlsx' for Current Gen Combustion Plant.")
-```
 
-Load up the location-specific information gleaned from GIS data. 
-To load up the location-specific date, first we load the FCID_code ratser layer.This has over a billion data points, and may
-crash RStudio. In many cases, we will crop the dataset down to a shapefile supplied by the user (or, more accurately, mask the dataset).
-If the dataset is full, most of those points are empty. In either case, once loaded, convert the RasterLayer to a data frame, and extract
-the subset of points that correspond to actual data. 
+#############################################################################################################################################
+# Load up the location-specific information gleaned from GIS data. 
+# To load up the location-specific date, first we load the FCID_code raster layer.This has over a billion data points, and if we try to make
+# a data table out of the full set, we will run into memory problems, maximum data table size columns, and probably crash RStudio. We will 
+# crop the raster down to a shapefile supplied by the user (or, more accurately, mask the raster). As rasters are always rectangular (and 
+# California is not), the full dataset would contain mostly empty points, and even smaller datasets may still have many empty poitns.
+# Once loaded, convert the RasterLayer to a data frame, and extract the subset of points that correspond to actual data. 
+# 
+# Once we have the smaller data set, convert to a data table and combine with the residue and decay tables.
+# 
+# ANDY: LOOK HERE
+# Our model runs cases individually, rather than paired scenarios, because of memory constraints of running two data pairs in a single run. BUT scenarios are going to cover the same geographic study area, 
+# and the most runtime-heavy code segment is the raster cropping and masking. So, if the first time we run a case, we run the raster process, save the resultant study_area_FCID, and THEN apply scenario_matrix
+# variables, we make this whiole thing run much quicker. This will require clear design for input/output file structure.
+#############################################################################################################################################
 
-Once we have the smaller data set, convert to a data table and combine with the residue and decay tables.
-
-ANDY: LOOK HERE
-Our model runs cases individually, rather than paired scenarios, because of memory constraints of running two data pairs in a single run. BUT scenarios are going to cover the same geographic study area, 
-and the most runtime-heavy code segment is the raster cropping and masking. So, if the first time we run a case, we run the raster process, save the resultant study_area_FCID, and THEN apply scenario_matrix
-variables, we make this whiole thing run much quicker. This will require clear design for input/output file structure.
-
-For agricultural data:
-(TBA)
-```{r}
 if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   study_area_raster <- raster(user_inputs[variable=='fcid_code_filepath',value])
   slope_raster <- raster(user_inputs[variable=='slope_filepath',value])
@@ -62,12 +62,12 @@ if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   }
   
   # convert raster objects to data frames. This may crash things.
-    ##########################################################################################
+  ##########################################################################################
   ##########################################################################################
   # Look into if we can combine the subset line below into the as.data.frame line here. Also, 
   # look if we can stack FCID and slope rasters to see if we can load them at the same time.
   ##########################################################################################
-    ##########################################################################################
+  ##########################################################################################
   study_area_df <- as.data.frame(study_area_raster,xy=TRUE)
   
   names(study_area_df) <- c('x','y','FCID_code')
@@ -96,23 +96,13 @@ if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   # Delete the slope data table to save on memory
   slope_dt <- NULL
   
-  # Read in the residue load values from a csv file. These values are indexed by FCID_code, so that is how we will join the 2 tables
+  # Read in the residue load values from a csv file. These values are indexed by FCID_code, so that is how we will eventually join the 2 tables
   fcid_table <- data.table(read.csv(user_inputs[variable=='residue_treatment_filepath',value]))
   # Eliminate the TPA column
   fcid_table[,TPA:=NULL]
-  setkey(fcid_table,FCID2018)
-  setkey(study_area_FCID,FCID_code)
-  study_area_FCID <- study_area_FCID[fcid_table[Treatment==user_inputs[variable=='treatment_type',value]]]
-  setkey(study_area_FCID,x,y)
-  
-  # There will be some overlap for FCID values that don't appear in the data set. They will have non-existant x & y values. Trim them.
-  study_area_FCID <- study_area_FCID[!is.na(x)]
   
   # Round the x and y values to the first decimal, otherwise rounding errors are going to muck with joins with the decay rates.
   study_area_FCID[,':='(x=round(x,digits=1),y=round(y,digits=1))]
-  
-  # Eliminate the treatment columns, we do not need it. The FCID code is still needed for power plant efficiency.
-  study_area_FCID[,Treatment:=NULL]
   
   # Time to add information about the biomass properties, specifically heating value and carbon fraction. 
   biomass_properties <- data.table(read.csv(user_inputs[variable=='biomass_properties_filepath',value]))
@@ -128,11 +118,10 @@ if(user_inputs[variable=='ag_or_forest',value]=='agricultural') {
   print('This code has yet to be written')
 }
 
-beep(5)
-```
+#############################################
+# Load the decay rate rasters
+#############################################
 
-Load the decay rate rasters
-```{r}
 # There are currently 3 decay rasters: one for CWD, FWD, and foliage. From our notes, there should be six rates (for piled and scattered), not just 3.
 # Figure out if this is an issue.
 CWD_decay_raster <- raster(user_inputs[variable=='CWD_decay_filepath',value])
@@ -188,445 +177,535 @@ CWD_decay_rates <- NULL
 FWD_decay_rates <- NULL
 foliage_decay_rates <- NULL
 
-beep(4)
-```
+############################################################################################################################
+# The longest run-time elemtns of CBREC are reading in the rasters, masking them to the study area, and reading in the 
+# FCID table. These will only change from study area to study area, and not scenario to scenario (or case to case). We 
+# load these once, and then keep them in memory and refresh for each scenario/case. So we copy the initial FCID/Slope/Decay
+# data here.
+############################################################################################################################
 
-We now have a spatially-indexed data table with residue loading information, decay rates, and cell slope values. These values should be the same for every study area. 
-Now we figure out what the technically recoverable residue is.
-```{r}
-# The technically available residues will be based on silvicultural treatment, harvest system/type (currently the harvest_system column),
-# burn type, biomass collection, and pulp market. Within a scenario, treatment, burn type, biomass collection, and pulp market are decided 
-# across the entire study area. Harvest system will vary based on slope. Rather than create an ID for study_area_FCID and merging with the complete scenario martix,
-# create a smaller scenario matrix filtered through the user inputs, and merge with study_area_FCID based upon harvest_system.
-complete_scenario_matrix <- data.table(read.csv(user_inputs[variable=='scenario_matrix_file',value]))
+# Cycle through scenaio matrix variables listed in user_inputs. If they are listed as "All", we cycle through all possible values. Otherwise, let that value stand.
+if(user_inputs[variable == "treatment_type",value]=="All") {
+  treatment.list <- c("RM100", "TFA20", "TFA40", "TFA60", "TFA80", "TFB20", "TFB40", "TFB60", "TFB80", "TP20", "TP40", "TP60", "TP80")
+} else {
+  treatment.list <- user_inputs[variable == "treatment_type",value]
+}
 
-# Trim to the treatment, burn type, biomass collection, and pulp market
-scenario_matrix <- copy(complete_scenario_matrix[Fraction_Piled_Residues==user_inputs[variable=='fraction_piled_residues',value] &
-                                                 Silvicultural.Treatment==user_inputs[variable=='treatment_type',value] & 
-                                                 Burn.Type==user_inputs[variable=='burn_type',value] & 
-                                                 Biomass.Collection==user_inputs[variable=='biomass_collection',value] & 
-                                                 Pulp.Market==user_inputs[variable=='has_pulp_market',value],])
+if(user_inputs[variable == "fraction_piled_residues",value]=="All") {
+  fraction.piled.list <- c("0%", "30%", "50%", "70%")
+} else {
+  fraction.piled.list <- user_inputs[variable == "fraction_piled_residues",value]
+}
 
-###########################################################################################################################################
-# The wildfire data will be selected based on some scenario matrix identifiers.
-# The order: Silvicultural_Treatment, Burn_Type, Fraction_Piled, Fraction_Scattered, secondary_burn, Biomass_Collection, Pulp_Market, ID
-# We don't have secondary burn, but we can access the ID, and given an ID and tile number, I think we can pull this off.
-#########################################################################################################################################
-scenario_ID <- paste(treatment_name_lookup[treat.code==user_inputs[variable=='treatment_type',value],treat.name], user_inputs[variable=='burn_type',value], str_remove(user_inputs[variable=='fraction_piled_residues',value],"%"), str_remove(user_inputs[variable=='fraction_scattered_residues',value],"%"), "first", user_inputs[variable=='biomass_collection',value], user_inputs[variable=='has_pulp_market',value], unique(scenario_matrix[,ID]),sep='-')
+if(user_inputs[variable == "burn_type",value]=="All") {
+  burn.type.list <- c("No", "Pile", "Broadcast", "Pile and Broadcast")
+} else {
+  burn.type.list <- user_inputs[variable == "burn_type",value]
+}
 
-#################################################################################################################################################################################
-#################################################################################################################################################################################
-# For larger offline runs, we may want to enable running based off of a row id in the scenario matrix file, rather than requiring all of the user input variables expressly.
-#################################################################################################################################################################################
-#################################################################################################################################################################################
+if(user_inputs[variable == "biomass_collection",value]=="All") {
+  biomass.collection.list <- c("All Tech Recoverable", "No", "Piles Only")
+} else {
+  biomass.collection.list <- user_inputs[variable == "biomass_collection",value]
+}
 
-########################################
-# Combine stem and bark residues.
-########################################
+if(user_inputs[variable == "has_pulp_market",value]=="All") {
+  pulp.market.list <- c("Yes", "No")
+} else {
+  pulp.market.list <- user_inputs[variable == "has_pulp_market",value]
+}
 
-# Merge senario matrix with study_area_FCID; this will be based on cell slope (>40%, <40%, or remove from study)
-scenario_matrix[,':='(ID=NULL, Fraction_Piled_Residues=NULL, Fraction_Scattered_Residues=NULL, Silvicultural.Treatment=NULL, Burn.Type=NULL, Biomass.Collection=NULL, Pulp.Market=NULL)]
-setkey(scenario_matrix,Slope)
+user_input_iterations <- data.table(expand.grid(treatment.list, fraction.piled.list, burn.type.list, biomass.collection.list, pulp.market.list))
+setnames(user_input_iterations, c("Var1", "Var2", "Var3", "Var4", "Var5"), c("treatment", "frac.piled", "prescribed.burn.type", "biomass.collection","pulp.market"))
+# add scattered fractions
+user_input_iterations[,frac.scattered := "100%"]
+user_input_iterations[frac.piled == "30%",frac.scattered := "70%"]
+user_input_iterations[frac.piled == "50%",frac.scattered := "50%"]
+user_input_iterations[frac.piled == "70%",frac.scattered := "30%"]
 
-###########################################################
-###########################################################
-# We may be able to speed this up by converting to factors
-###########################################################
-###########################################################
-setkey(study_area_FCID,cell_slope)
-study_area_FCID[,merge_column := "GT40"]
-study_area_FCID[cell_slope<40,merge_column := "LT40"]
-
-# Delete entries after the slope cutoff point
-study_area_FCID <- study_area_FCID[cell_slope<as.numeric(user_inputs[variable=='residue_slope_cutoff',value])]
-
-# Merge study_area_FCID with the scenario matrix
-setkey(study_area_FCID,merge_column)
-study_area_FCID <- scenario_matrix[study_area_FCID]
-
-# Combine the technically available fractions with the gross resource base.
-study_area_FCID[,':='(Recovered_Stem9Plus_tonsAcre = Recovered_Stem9Plus * Stem9Plus_tonsAcre,
-                   Recovered_Stem6to9_tonsAcre = Recovered_Stem6to9 * Stem6to9_tonsAcre,
-                   Recovered_Stem4to6_tonsAcre = Recovered_Stem4to6 * Stem4to6_tonsAcre,
-                   Recovered_Branch_tonsAcre = Recovered_Branch * Branch_tonsAcre,
-                   Recovered_Foliage_tonsAcre = Recovered_Foliage * Foliage_tonsAcre,
-                   Piled_Stem9Plus_tonsAcre = Piled_Stem9Plus * Stem9Plus_tonsAcre,
-                   Piled_Stem6to9_tonsAcre = Piled_Stem6to9 * Stem6to9_tonsAcre,
-                   Piled_Stem4to6_tonsAcre = Piled_Stem4to6 * Stem4to6_tonsAcre,
-                   Piled_Branch_tonsAcre = Piled_Branch * Branch_tonsAcre,
-                   Piled_Foliage_tonsAcre = Piled_Foliage * Foliage_tonsAcre,
-                   Scattered_Stem9Plus_tonsAcre = Scattered_Stem9Plus * Stem9Plus_tonsAcre,
-                   Scattered_Stem6to9_tonsAcre = Scattered_Stem6to9 * Stem6to9_tonsAcre,
-                   Scattered_Stem4to6_tonsAcre = Scattered_Stem4to6 * Stem4to6_tonsAcre,
-                   Scattered_Branch_tonsAcre = Scattered_Branch * Branch_tonsAcre,
-                   Scattered_Foliage_tonsAcre = Scattered_Foliage * Foliage_tonsAcre
-)]
-
-# Trim out the columns we no longer need. ###### REMOVING SLOPE FOR NOW ######
-warning("This chunk of code will need to be re-written if we remove bark columns from the scenario matrix")
-study_area_FCID[,':='(Slope=NULL, Recovered_Stem9Plus = NULL, Stem9Plus_tonsAcre = NULL, Recovered_Stem6to9 = NULL, Stem6to9_tonsAcre = NULL, Recovered_Stem4to6 = NULL,
-                   Stem4to6_tonsAcre = NULL, Recovered_Bark9Plus = NULL, Recovered_Bark6to9 = NULL, Recovered_Bark4to6 = NULL, Recovered_Branch = NULL, Branch_tonsAcre = NULL, 
-                   Recovered_Foliage = NULL, Foliage_tonsAcre = NULL, Merchantable_Stem9Plus = NULL, Merchantable_Stem6to9 = NULL, Merchantable_Stem4to6 = NULL,  Merchantable_Bark9Plus = NULL,
-                   Merchantable_Bark6to9 = NULL, Merchantable_Bark4to6 = NULL, Merchantable_Branch = NULL, Merchantable_Foliage = NULL, Piled_Stem9Plus = NULL, 
-                   Piled_Stem6to9 = NULL, Piled_Stem4to6 = NULL, Piled_Bark9Plus = NULL, Piled_Bark6to9 = NULL, Piled_Bark4to6 = NULL, Piled_Branch = NULL, Piled_Foliage = NULL,
-                   Scattered_Stem9Plus = NULL, Scattered_Stem6to9 = NULL, Scattered_Stem4to6 = NULL, Scattered_Bark9Plus = NULL, Scattered_Bark6to9 = NULL,
-                   Scattered_Bark4to6 = NULL, Scattered_Branch = NULL, Scattered_Foliage = NULL
-)]
-
-```
-
-Add wildfire data and emissions factors. These are stored in .rds files by tile and scenario-definition variables; there are over 13,000 tiles, multiple scenarios for each tile, and for multiple time periods for each scenario. We need to find and load the scenario-specific tile data that overlaps with our study area and then crop it to match our study area exactly.
-
-*NOTE* The fill wildfire data has not been processed yet, so to test out this operation, I am probably going to need to make some dummy data.
-```{r}
-# Load up the full tile shape file
-full_tile_set <- readOGR(user_inputs[variable=="tile_shape_file",value])
-study_area_tiles <- raster::intersect(study_area_mask,full_tile_set)
-
-# To get the tile IDs, convert study_area_tiles into a data frame and extract the ID column.
-# NOTE: THERE WILL BE ISSUES IF THE MASK FILE HAS AN "ID" ATTRIBUTE.
-tile_list <- as.data.frame(study_area_tiles)$ID
-
-# Extracting the values we need from the wildfire data is going to be long and a little messy. So I'm throwing it in a module.
-# Calculating emissions factors and combustion/char_fractions should remove the need to convert to metric - since EVERYTHING is 
-# imperial, we essentially get a massless factor, and the conversion factors will cancel out.
-wildfire_data <- wildfire_processing_fun(user_inputs[variable=="wildfire_data_directory",value], scenario_ID, user_inputs[variable=='burn_type',value], tile_list)
-
-wildfire_data[,':='(x=round(x,digits=1),y=round(y,digits=1))]
-setkey(wildfire_data,x,y)
-```
-
-Column preparation for Burn/Decay/Wildfire Emissions
-```{r}
-# Step 1: combine all mass categories into CWD, FWD, and foliage. There will also be a duff column, though this will start empty. 
-# There will be several categories with different decay rates - recovered, scattered (including merchantable breakage), field piled, and landing piled
-study_area_FCID[,':='(Recovered_CWD_tonsAcre = Recovered_Stem9Plus_tonsAcre + Recovered_Stem6to9_tonsAcre + Recovered_Stem4to6_tonsAcre,
-                      Scattered_CWD_tonsAcre = Scattered_Stem9Plus_tonsAcre + Scattered_Stem6to9_tonsAcre + Scattered_Stem4to6_tonsAcre,
-                      Piled_CWD_tonsAcre = Piled_Stem9Plus_tonsAcre + Piled_Stem6to9_tonsAcre + Piled_Stem4to6_tonsAcre
-)]
-
-# Clear out old columns, as well as merchantable branch/foliage (which should've been empty anyway)
-study_area_FCID[,':='(Recovered_Stem9Plus_tonsAcre = NULL, Recovered_Stem6to9_tonsAcre = NULL, Recovered_Stem4to6_tonsAcre = NULL,
-                      Scattered_Stem9Plus_tonsAcre = NULL, Scattered_Stem6to9_tonsAcre = NULL, Scattered_Stem4to6_tonsAcre = NULL,
-                      Piled_Stem9Plus_tonsAcre = NULL, Piled_Stem6to9_tonsAcre = NULL, Piled_Stem4to6_tonsAcre = NULL
-)]
-
-# The residue loading columns are currently in imperial units: tons (2000 lbs/acre), and we want it in metric (tonnes (1000 kg) /acre). 1 ton equals 0.907185 tonnes
-study_area_FCID[,':='(
-  Recovered_Branch_tonsAcre = Recovered_Branch_tonsAcre * 0.907185,
-  Recovered_Foliage_tonsAcre = Recovered_Foliage_tonsAcre * 0.907185, 
-  Piled_Branch_tonsAcre = Piled_Branch_tonsAcre * 0.907185,
-  Piled_Foliage_tonsAcre = Piled_Foliage_tonsAcre * 0.907185,
-  Scattered_Branch_tonsAcre = Scattered_Branch_tonsAcre * 0.907185,
-  Scattered_Foliage_tonsAcre = Scattered_Foliage_tonsAcre * 0.907185,
-  Recovered_CWD_tonsAcre = Recovered_CWD_tonsAcre * 0.907185,
-  Scattered_CWD_tonsAcre = Scattered_CWD_tonsAcre * 0.907185,
-  Piled_CWD_tonsAcre = Piled_CWD_tonsAcre * 0.907185
-)]
-
-# FWD consists of branches, and foliage is obviously foliage. Renamed the "branch" columns to "FWD", and rename all of the columns labeled "_tonsAcre" to "_tonnesAcre" so we know we are in metric. 
-setnames(study_area_FCID,
-         c("Recovered_Branch_tonsAcre","Recovered_Foliage_tonsAcre","Piled_Branch_tonsAcre","Piled_Foliage_tonsAcre","Scattered_Branch_tonsAcre","Scattered_Foliage_tonsAcre","Recovered_CWD_tonsAcre","Scattered_CWD_tonsAcre","Piled_CWD_tonsAcre"),
-         c("Recovered_FWD_tonnesAcre","Recovered_Foliage_tonnesAcre","Piled_FWD_tonnesAcre","Piled_Foliage_tonnesAcre","Scattered_FWD_tonnesAcre","Scattered_Foliage_tonnesAcre","Recovered_CWD_tonnesAcre","Scattered_CWD_tonnesAcre","Piled_CWD_tonnesAcre"))
-
-# Copy the residue columns for Piled and Scattered residues. These will be the initial mass residues in Year 1. We will also need some blank columns to track material exposed to fire but left unburned.
-study_area_FCID[,':='(Recovered_CWD_tonnesAcre_INITIAL = Recovered_CWD_tonnesAcre,
-                      Recovered_FWD_tonnesAcre_INITIAL = Recovered_FWD_tonnesAcre,
-                      Recovered_Foliage_tonnesAcre_INITIAL = Recovered_Foliage_tonnesAcre,
-                      Piled_CWD_tonnesAcre_INITIAL = Piled_CWD_tonnesAcre,
-                      Piled_FWD_tonnesAcre_INITIAL = Piled_FWD_tonnesAcre,
-                      Piled_Foliage_tonnesAcre_INITIAL = Piled_Foliage_tonnesAcre,
-                      Scattered_CWD_tonnesAcre_INITIAL = Scattered_CWD_tonnesAcre,
-                      Scattered_FWD_tonnesAcre_INITIAL = Scattered_FWD_tonnesAcre,
-                      Scattered_Foliage_tonnesAcre_INITIAL = Scattered_Foliage_tonnesAcre
-                      )]
-
-# Make columns for duff, mass previously exposed to fire but unburnt, and year.i columns. If space becomes an issue, we can create/delete year.i column in the decay function, but I;m guessing that will hit our speed.
-study_area_FCID[,':='(Duff_tonnesAcre=0, decay_CWD_mass_year_i=0, decay_FWD_mass_year_i=0, decay_Foliage_mass_year_i=0,
-                      fire_exposed_CWD_mass_year_i=0, fire_exposed_FWD_mass_year_i=0, fire_exposed_Foliage_mass_year_i=0, fire_exposed_Duff_mass_year_i=0,
-                      prev_fired_CWD_tonnesAcre=0, prev_fired_FWD_tonnesAcre=0, prev_fired_Foliage_tonnesAcre=0, prev_fired_Duff_tonnesAcre=0)]
-
-century_emissions_profile <- data.table(CO2_tonnes=rep(0,100), CO_tonnes=rep(0,100), CH4_tonnes=rep(0,100), NOx_tonnes=rep(0,100), PMUnder10um_tonnes=rep(0,100), PMUnder2.5um_tonnes=rep(0,100), SO2_tonnes=rep(0,100), VOC_tonnes=rep(0,100), char_tonnes=rep(0,100))
-
-# Cycle through 100 years of emissions. Each year, we need to:
-# 1) Calculate the mass lost in year i
-# 2) Use the mass lost to atmosphere/duff ratios to calculate the mass lost to duff and atmosphere
-# 3) Update the dynamic residue mass
-# 4) Apply decay to the duff column, add emissions to emissions columns, and update duff mass.
-
-# Output should be a 100 row-X xolumn data table of combined emissions for study area by emissions type (i.e. decay, wildfire, other use....). See output template for more info.
-
-```
-
-If our case involves biomass collection, transportation and equipment becomes an issue. This will involve more raster work, which will take a little time. So, let's skip it if biomass collection ain't happening.
-```{r}
-if(user_inputs[variable=="biomass_collection",value]!="No") {
+for(user.input.row.i in 1:nrow(user_input_iterations)) {
+  # Copy the original study_area_FCID data into a data structure that will dynamically change.
+  case.data <- copy(study_area_FCID)
   
-  #######################################################################################################################################
-  # Determine specific travel distances - cell to road, then road to plant.
-  #######################################################################################################################################
-  # Load the cell to road raster (the user input is to the transportation raster directory; the specific raster will always have the same name.) Be sure to trim to the study area, or we may hit memory problems.
-  cell_to_road_raster <- raster(paste(user_inputs[variable=="transportation_filepath",value],"Transportation_DistanceToRoad.tif",sep=""))
-  # Be sure to trim to the study area, or we may hit memory problems.
-  cell_to_road_raster <- crop(cell_to_road_raster,extent(study_area_mask))
-  cell_to_road_raster <- mask(cell_to_road_raster,study_area_mask)
-  cell_to_road <- as.data.frame(cell_to_road_raster,xy=T)
-  cell_to_road <- data.table(cell_to_road)
+  # Replace the user inputs with the appropriate variables from user_input_iterations
+  user_inputs[variable=='fraction_piled_residues',value := user_input_iterations[user.input.row.i, frac.piled]]
+  user_inputs[variable=='fraction_scattered_residues',value := user_input_iterations[user.input.row.i, frac.scattered]]
+  user_inputs[variable=='treatment_type',value := user_input_iterations[user.input.row.i, treatment]] 
+  user_inputs[variable=='burn_type',value := user_input_iterations[user.input.row.i, prescribed.burn.type]]
+  user_inputs[variable=='biomass_collection',value := user_input_iterations[user.input.row.i, biomass.collection]]
+  user_inputs[variable=='has_pulp_market',value := user_input_iterations[user.input.row.i, pulp.market]]
+  
+  # The technically available residues will be based on slope, silvicultural treatment, the fraction of piled/scattered residues, burn type, 
+  # biomass collection, and pulp market. Within a scenario, treatment, burn type, biomass collection, and pulp market are identical across 
+  # the entire study area. Due to harvest restrictions baked into the residue percentages, residue quantites will be affected by slope, which
+  # varies from cell to cell. Rather than create an ID for case.data and merging with the complete scenario martix, create a smaller 
+  # scenario matrix filtered through the user inputs, and merge with case.data
+  complete_scenario_matrix <- data.table(read.csv(user_inputs[variable=='scenario_matrix_file',value]))
+  
+  # Trim to the treatment, burn type, biomass collection, and pulp market
+  scenario_matrix <- copy(complete_scenario_matrix[Fraction_Piled_Residues==user_inputs[variable=='fraction_piled_residues',value] &
+                                                   Silvicultural.Treatment==user_inputs[variable=='treatment_type',value] & 
+                                                   Burn.Type==user_inputs[variable=='burn_type',value] & 
+                                                   Biomass.Collection==user_inputs[variable=='biomass_collection',value] & 
+                                                   Pulp.Market==user_inputs[variable=='has_pulp_market',value],])
+  
+  # Not all combinations of user inputs are valid in the scenario matrix; if there are 0% piled residues, you cannot collect or burn piles.
+  # If scenario_matrix is empty, skip to the next iteration.
+  if(nrow(scenario_matrix)<1) {next}
+  
+  #########################################################################################################################################
+  # The wildfire data will be selected based on some scenario matrix identifiers.
+  # The order: Silvicultural_Treatment, Burn_Type, Fraction_Piled, Fraction_Scattered, secondary_burn, Biomass_Collection, Pulp_Market, ID
+  # We don't have secondary burn, but we can access the ID, and given an ID and tile number, we can pull this off.
+  #########################################################################################################################################
+  scenario_ID <- paste(treatment_name_lookup[treat.code==user_inputs[variable=='treatment_type',value],treat.name], user_inputs[variable=='burn_type',value], str_remove(user_inputs[variable=='fraction_piled_residues',value],"%"),
+                       str_remove(user_inputs[variable=='fraction_scattered_residues',value],"%"), "first", user_inputs[variable=='biomass_collection',value], user_inputs[variable=='has_pulp_market',value], unique(scenario_matrix[,ID]),sep='-')
+  
+  # I'm thinking we'll need the scenario ID number for for output organization
+  # we may want to enable running based off of a row id in the scenario matrix file, rather than requiring all of the user input variables expressly.
+  scenario_ID_num <- unique(scenario_matrix[,ID])
+  
+  
+  # Combine case.data with the FCID-specific residue loading, specific to out scenario treatment.
+  setkey(fcid_table,FCID2018)
+  setkey(case.data,FCID_code)
+  case.data <- case.data[fcid_table[Treatment==user_inputs[variable=='treatment_type',value]]]
+  setkey(case.data,x,y)
+  
+  # Eliminate the treatment columns, we do not need it. The FCID code is still needed for power plant efficiency.
+  case.data[,Treatment:=NULL]
 
-  # Rename the value column, bearing in mind that the distance raster is in meters.
-  setnames(cell_to_road,c('x','y','CellToRoadDist_meters'))
+  # There will be some overlap for FCID values that don't appear in the data set. They will have non-existant x & y values. Trim them.
+  case.data <- case.data[!is.na(x)]
+  
+  ########################################
+  # Combine stem and bark residues.
+  ########################################
 
-  # Convert the meters to miles; eliminate meters
-  cell_to_road[,CellToRoadDist_miles := CellToRoadDist_meters * 0.000621371]
-  cell_to_road[,CellToRoadDist_meters := NULL]
-
-  # Combine with studay_area_FCID. This first requires rounding coordinates to the nearest tenth.
-  cell_to_road[,':='(x=round(x,digits=1),y=round(y,digits=1))]
-  setkey(cell_to_road,x,y)
-  study_area_FCID <- cell_to_road[study_area_FCID]
-
-  # Repeat for the road to plant raster. The file name will be derived from the user-selected plant code.
-  road_to_plant_raster <- raster(paste(user_inputs[variable=="transportation_filepath",value],user_inputs[variable=="power_plant_location",value],".tif",sep=""))
-  # road_to_plant_raster <- raster("/Volumes/SharedData/Main Folder - Andy H/CBREC_input_directory/geospatial_data/transportation_data/NearestOperationalPlant.tif")
-  # Again, trim to the study area, or we may hit memory problems.
-  road_to_plant_raster <- crop(road_to_plant_raster,extent(study_area_mask))
-  road_to_plant_raster <- mask(road_to_plant_raster,study_area_mask)
+  # Merge senario matrix with case.data; this will be based on cell slope (>40%, <40%, or remove from study)
+  scenario_matrix[,':='(ID=NULL, Fraction_Piled_Residues=NULL, Fraction_Scattered_Residues=NULL, Silvicultural.Treatment=NULL, Burn.Type=NULL, Biomass.Collection=NULL, Pulp.Market=NULL)]
+  setkey(scenario_matrix,Slope)
   
-  road_to_plant <- as.data.frame(road_to_plant_raster,xy=T)
+  ###########################################################################################################################################
+  # We now have a spatially-indexed data table with residue loading information, decay rates, and cell slope values. Now we figure out what
+  # the technically recoverable residue is. We may be able to speed this up by converting to factors
+  ###########################################################################################################################################
   
-  # The transportation rasters are compressed, so as.data.frame will get all coordinates, but lose much of the data. This line gets it back.
-  road_to_plant$RoadToPlant_miles <- road_to_plant_raster[] %>% as.double()
+  setkey(case.data,cell_slope)
+  case.data[,merge_column := "GT40"]
+  case.data[cell_slope<40,merge_column := "LT40"]
   
-  # Trim uneeded columns, convert to data frame.
-  road_to_plant <- road_to_plant %>% select(x,y,RoadToPlant_miles)
-  road_to_plant <- data.table(road_to_plant)
+  # Delete entries after the slope cutoff point
+  case.data <- case.data[cell_slope<as.numeric(user_inputs[variable=='residue_slope_cutoff',value])]
   
-  # Combine with study_area_FCID. This first requires rounding coordinates to the nearest tenth.
-  road_to_plant[,':='(x=round(x,digits=1),y=round(y,digits=1))]
-  setkey(road_to_plant,x,y)
+  # Merge case.data with the scenario matrix
+  setkey(case.data,merge_column)
+  case.data <- scenario_matrix[case.data]
   
-  # Add a column to indicate the specific plant location. This is set in the user variables; if the selected location is "NearestOperationalPlant", it works differently
-  if(user_inputs[variable=="power_plant_location",value]=="NearestOperationalPlant") {
-    # There will be multiple plant IDs. We will need to read in the plant ID raster, pair in codes from a plant ID raster, and fill in any gaps in the operational plant raster with a default max distance.
-    nearest_plant_raster <- raster(paste(user_inputs[variable=="transportation_filepath",value],"NearestPlantID.tif",sep=""))
-    # The "NearestPlantID" raster is ever so slightly misaligned with the other rasters, despite having the same projection. So, we resample it.
-    # Remember to select "ngb" (nearest neighbor) as the method.
-    nearest_plant_resampled <- projectRaster(nearest_plant_raster,road_to_plant_raster,method = "ngb")
-    nearest_plant <- as.data.frame(nearest_plant_resampled,xy=T)
-    nearest_plant <- data.table(nearest_plant)
-    setkey(nearest_plant,NearestPlantID)
+  # Combine the technically available fractions with the gross resource base.
+  case.data[,':='(Recovered_Stem9Plus_tonsAcre = Recovered_Stem9Plus * Stem9Plus_tonsAcre,
+                  Recovered_Stem6to9_tonsAcre = Recovered_Stem6to9 * Stem6to9_tonsAcre,
+                  Recovered_Stem4to6_tonsAcre = Recovered_Stem4to6 * Stem4to6_tonsAcre,
+                  Recovered_Branch_tonsAcre = Recovered_Branch * Branch_tonsAcre,
+                  Recovered_Foliage_tonsAcre = Recovered_Foliage * Foliage_tonsAcre,
+                  Piled_Stem9Plus_tonsAcre = Piled_Stem9Plus * Stem9Plus_tonsAcre,
+                  Piled_Stem6to9_tonsAcre = Piled_Stem6to9 * Stem6to9_tonsAcre,
+                  Piled_Stem4to6_tonsAcre = Piled_Stem4to6 * Stem4to6_tonsAcre,
+                  Piled_Branch_tonsAcre = Piled_Branch * Branch_tonsAcre,
+                  Piled_Foliage_tonsAcre = Piled_Foliage * Foliage_tonsAcre,
+                  Scattered_Stem9Plus_tonsAcre = Scattered_Stem9Plus * Stem9Plus_tonsAcre,
+                  Scattered_Stem6to9_tonsAcre = Scattered_Stem6to9 * Stem6to9_tonsAcre,
+                  Scattered_Stem4to6_tonsAcre = Scattered_Stem4to6 * Stem4to6_tonsAcre,
+                  Scattered_Branch_tonsAcre = Scattered_Branch * Branch_tonsAcre,
+                  Scattered_Foliage_tonsAcre = Scattered_Foliage * Foliage_tonsAcre
+            )]
+  
+  # Trim out the columns we no longer need.
+  warning("This chunk of code will need to be re-written if we remove bark columns from the scenario matrix")
+  case.data[,':='(Slope=NULL, Recovered_Stem9Plus = NULL, Stem9Plus_tonsAcre = NULL, Recovered_Stem6to9 = NULL, Stem6to9_tonsAcre = NULL, Recovered_Stem4to6 = NULL,
+                  Stem4to6_tonsAcre = NULL, Recovered_Bark9Plus = NULL, Recovered_Bark6to9 = NULL, Recovered_Bark4to6 = NULL, Recovered_Branch = NULL, Branch_tonsAcre = NULL, 
+                  Recovered_Foliage = NULL, Foliage_tonsAcre = NULL, Merchantable_Stem9Plus = NULL, Merchantable_Stem6to9 = NULL, Merchantable_Stem4to6 = NULL,  Merchantable_Bark9Plus = NULL,
+                  Merchantable_Bark6to9 = NULL, Merchantable_Bark4to6 = NULL, Merchantable_Branch = NULL, Merchantable_Foliage = NULL, Piled_Stem9Plus = NULL, 
+                  Piled_Stem6to9 = NULL, Piled_Stem4to6 = NULL, Piled_Bark9Plus = NULL, Piled_Bark6to9 = NULL, Piled_Bark4to6 = NULL, Piled_Branch = NULL, Piled_Foliage = NULL,
+                  Scattered_Stem9Plus = NULL, Scattered_Stem6to9 = NULL, Scattered_Stem4to6 = NULL, Scattered_Bark9Plus = NULL, Scattered_Bark6to9 = NULL,
+                  Scattered_Bark4to6 = NULL, Scattered_Branch = NULL, Scattered_Foliage = NULL
+           )]
+  
+  #########################################################################################################################################
+  # Add wildfire data and emissions factors. These are stored in .rds files by tile and scenario-definition variables; there are over 
+  # 13,000 tiles, multiple scenarios for each tile, and for multiple time periods for each scenario. We need to find and load the 
+  # scenario-specific tile data that overlaps with our study area and then crop it to match our study area exactly.
+  #########################################################################################################################################
+  
+  # Load up the full tile shape file
+  full_tile_set <- readOGR(user_inputs[variable=="tile_shape_file",value])
+  study_area_tiles <- raster::intersect(study_area_mask,full_tile_set)
+  
+  # To get the tile IDs, convert study_area_tiles into a data frame and extract the ID column.
+  # NOTE: THERE WILL BE ISSUES IF THE MASK FILE HAS AN "ID" ATTRIBUTE.
+  tile_list <- as.data.frame(study_area_tiles)$ID
+  
+  # Extracting the values we need from the wildfire data is going to be long and a little messy. So I'm throwing it in a module.
+  # Calculating emissions factors and combustion/char_fractions should remove the need to convert to metric - since EVERYTHING is 
+  # imperial, we essentially get a massless factor, and the conversion factors will cancel out.
+  wildfire_data <- wildfire_processing_fun(user_inputs[variable=="wildfire_data_directory",value], scenario_ID, user_inputs[variable=='burn_type',value], tile_list)
+  
+  wildfire_data[,':='(x=round(x,digits=1),y=round(y,digits=1))]
+  setkey(wildfire_data,x,y)
+  
+  ############################################################
+  # Prepare columns for Burn/Decay/Wildfire Emissions
+  ############################################################
+  
+  # Step 1: combine all mass categories into CWD, FWD, and foliage. There will also be a duff column, though this will start empty. 
+  # There will be several categories with different decay rates - recovered, scattered (including merchantable breakage), field piled, and landing piled
+  case.data[,':='(Recovered_CWD_tonsAcre = Recovered_Stem9Plus_tonsAcre + Recovered_Stem6to9_tonsAcre + Recovered_Stem4to6_tonsAcre,
+                  Scattered_CWD_tonsAcre = Scattered_Stem9Plus_tonsAcre + Scattered_Stem6to9_tonsAcre + Scattered_Stem4to6_tonsAcre,
+                  Piled_CWD_tonsAcre = Piled_Stem9Plus_tonsAcre + Piled_Stem6to9_tonsAcre + Piled_Stem4to6_tonsAcre
+                  )]
+  
+  # Clear out old columns, as well as merchantable branch/foliage (which should've been empty anyway)
+  case.data[,':='(Recovered_Stem9Plus_tonsAcre = NULL, Recovered_Stem6to9_tonsAcre = NULL, Recovered_Stem4to6_tonsAcre = NULL,
+                  Scattered_Stem9Plus_tonsAcre = NULL, Scattered_Stem6to9_tonsAcre = NULL, Scattered_Stem4to6_tonsAcre = NULL,
+                  Piled_Stem9Plus_tonsAcre = NULL, Piled_Stem6to9_tonsAcre = NULL, Piled_Stem4to6_tonsAcre = NULL
+                  )]
+  
+  # The residue loading columns are currently in imperial units: tons (2000 lbs/acre), and we want it in metric (tonnes (1000 kg) /acre). 1 ton equals 0.907185 tonnes
+  case.data[,':='(
+    Recovered_Branch_tonsAcre = Recovered_Branch_tonsAcre * 0.907185,
+    Recovered_Foliage_tonsAcre = Recovered_Foliage_tonsAcre * 0.907185, 
+    Piled_Branch_tonsAcre = Piled_Branch_tonsAcre * 0.907185,
+    Piled_Foliage_tonsAcre = Piled_Foliage_tonsAcre * 0.907185,
+    Scattered_Branch_tonsAcre = Scattered_Branch_tonsAcre * 0.907185,
+    Scattered_Foliage_tonsAcre = Scattered_Foliage_tonsAcre * 0.907185,
+    Recovered_CWD_tonsAcre = Recovered_CWD_tonsAcre * 0.907185,
+    Scattered_CWD_tonsAcre = Scattered_CWD_tonsAcre * 0.907185,
+    Piled_CWD_tonsAcre = Piled_CWD_tonsAcre * 0.907185
+  )]
+  
+  # FWD consists of branches, and foliage is obviously foliage. Renamed the "branch" columns to "FWD", and rename all of the columns labeled "_tonsAcre" to "_tonnesAcre" so we know we are in metric.
+  setnames(case.data,
+           c("Recovered_Branch_tonsAcre","Recovered_Foliage_tonsAcre","Piled_Branch_tonsAcre","Piled_Foliage_tonsAcre","Scattered_Branch_tonsAcre","Scattered_Foliage_tonsAcre","Recovered_CWD_tonsAcre","Scattered_CWD_tonsAcre","Piled_CWD_tonsAcre"),
+           c("Recovered_FWD_tonnesAcre","Recovered_Foliage_tonnesAcre","Piled_FWD_tonnesAcre","Piled_Foliage_tonnesAcre","Scattered_FWD_tonnesAcre","Scattered_Foliage_tonnesAcre","Recovered_CWD_tonnesAcre","Scattered_CWD_tonnesAcre","Piled_CWD_tonnesAcre"))
+  
+  # Copy the residue columns for Piled and Scattered residues. These will be the initial mass residues in Year 1. We will also need some blank columns to track material exposed to fire but left unburned.
+  case.data[,':='(Recovered_CWD_tonnesAcre_INITIAL = Recovered_CWD_tonnesAcre,
+                        Recovered_FWD_tonnesAcre_INITIAL = Recovered_FWD_tonnesAcre,
+                        Recovered_Foliage_tonnesAcre_INITIAL = Recovered_Foliage_tonnesAcre,
+                        Piled_CWD_tonnesAcre_INITIAL = Piled_CWD_tonnesAcre,
+                        Piled_FWD_tonnesAcre_INITIAL = Piled_FWD_tonnesAcre,
+                        Piled_Foliage_tonnesAcre_INITIAL = Piled_Foliage_tonnesAcre,
+                        Scattered_CWD_tonnesAcre_INITIAL = Scattered_CWD_tonnesAcre,
+                        Scattered_FWD_tonnesAcre_INITIAL = Scattered_FWD_tonnesAcre,
+                        Scattered_Foliage_tonnesAcre_INITIAL = Scattered_Foliage_tonnesAcre
+                  )]
+  
+  # Make columns for duff, mass previously exposed to fire but unburnt, and year.i columns. If space becomes an issue, we can create/delete year.i column in the decay function, but I;m guessing that will hit our speed.
+  case.data[,':='(Duff_tonnesAcre=0, decay_CWD_mass_year_i=0, decay_FWD_mass_year_i=0, decay_Foliage_mass_year_i=0,
+                        fire_exposed_CWD_mass_year_i=0, fire_exposed_FWD_mass_year_i=0, fire_exposed_Foliage_mass_year_i=0, fire_exposed_Duff_mass_year_i=0,
+                        prev_fired_CWD_tonnesAcre=0, prev_fired_FWD_tonnesAcre=0, prev_fired_Foliage_tonnesAcre=0, prev_fired_Duff_tonnesAcre=0)]
+  
+  decay_emissions_profile <- data.table(CO2_tonnes=rep(0,100), CO_tonnes=rep(0,100), CH4_tonnes=rep(0,100), NOx_tonnes=rep(0,100), PMUnder10um_tonnes=rep(0,100), PMUnder2.5um_tonnes=rep(0,100), SO2_tonnes=rep(0,100), VOC_tonnes=rep(0,100), char_tonnes=rep(0,100))
+  wildfire_emissions_profile <- data.table(CO2_tonnes=rep(0,100), CO_tonnes=rep(0,100), CH4_tonnes=rep(0,100), NOx_tonnes=rep(0,100), PMUnder10um_tonnes=rep(0,100), PMUnder2.5um_tonnes=rep(0,100), SO2_tonnes=rep(0,100), VOC_tonnes=rep(0,100), char_tonnes=rep(0,100))
+  
+  #############################################################################################################################################
+  # The data is set up, now get into the emissions meat of CBREC. If our case involves biomass collection, transportation and equipment 
+  # becomes an issue. This involves more raster work, which will take a little time. So, let's skip this if biomass collection ain't happening.
+  #############################################################################################################################################
+  
+  if(user_inputs[variable=="biomass_collection",value]!="No") {
     
-    # Read in location ID names, and join with nearest_plant
-    location_names <- data.table(read.csv(user_inputs[variable=="power_plant_location_code_filepath",value]))
-    setkey(location_names,OID)
-    nearest_plant <- location_names[nearest_plant]
+    #######################################################################################################################################
+    # Determine specific travel distances - cell to road, then road to plant.
+    #######################################################################################################################################
+    # Load the cell to road raster (the user input is to the transportation raster directory; the specific raster will always have the same name.) Be sure to trim to the study area, or we may hit memory problems.
+    cell_to_road_raster <- raster(paste(user_inputs[variable=="transportation_filepath",value],"Transportation_DistanceToRoad.tif",sep=""))
+    # Be sure to trim to the study area, or we may hit memory problems.
+    cell_to_road_raster <- crop(cell_to_road_raster,extent(study_area_mask))
+    cell_to_road_raster <- mask(cell_to_road_raster,study_area_mask)
+    cell_to_road <- as.data.frame(cell_to_road_raster,xy=T)
+    cell_to_road <- data.table(cell_to_road)
     
-    # Trim unneeded columns, and re-name
-    nearest_plant[,':='(OID=NULL,Status=NULL, MW_Nmpl=NULL, Prjct_T=NULL, City=NULL, County=NULL)]
-    setnames(nearest_plant,"Name","plant_location")
+    # Rename the value column, bearing in mind that the distance raster is in meters.
+    setnames(cell_to_road,c('x','y','CellToRoadDist_meters'))
     
-    # Round coordinates
-    nearest_plant[,':='(x=round(x,digits=1),y=round(y,digits=1))]
+    # Convert the meters to miles; eliminate meters
+    cell_to_road[,CellToRoadDist_miles := CellToRoadDist_meters * 0.000621371]
+    cell_to_road[,CellToRoadDist_meters := NULL]
     
-    # Combine with road_to_plant
+    # Combine with studay_area_FCID. This first requires rounding coordinates to the nearest tenth.
+    cell_to_road[,':='(x=round(x,digits=1),y=round(y,digits=1))]
+    setkey(cell_to_road,x,y)
+    case.data <- cell_to_road[case.data]
+    
+    # Repeat for the road to plant raster. The file name will be derived from the user-selected plant code.
+    road_to_plant_raster <- raster(paste(user_inputs[variable=="transportation_filepath",value],user_inputs[variable=="power_plant_location",value],".tif",sep=""))
+    # road_to_plant_raster <- raster("/Volumes/SharedData/Main Folder - Andy H/CBREC_input_directory/geospatial_data/transportation_data/NearestOperationalPlant.tif")
+    # Again, trim to the study area, or we may hit memory problems.
+    road_to_plant_raster <- crop(road_to_plant_raster,extent(study_area_mask))
+    road_to_plant_raster <- mask(road_to_plant_raster,study_area_mask)
+    
+    road_to_plant <- as.data.frame(road_to_plant_raster,xy=T)
+    
+    # The transportation rasters are compressed, so as.data.frame will get all coordinates, but lose much of the data. This line gets it back.
+    road_to_plant$RoadToPlant_miles <- road_to_plant_raster[] %>% as.double()
+    
+    # Trim uneeded columns, convert to data frame.
+    road_to_plant <- road_to_plant %>% select(x,y,RoadToPlant_miles)
+    road_to_plant <- data.table(road_to_plant)
+    
+    # Combine with case.data. This first requires rounding coordinates to the nearest tenth.
+    road_to_plant[,':='(x=round(x,digits=1),y=round(y,digits=1))]
     setkey(road_to_plant,x,y)
-    setkey(nearest_plant,x,y)
-    road_to_plant <- road_to_plant[nearest_plant]
-  } else {
-    road_to_plant[,plant_location:=user_inputs[variable=="power_plant_location",value]]
-  }
-  study_area_FCID <- road_to_plant[study_area_FCID]
-  
-  # HARVEST PROCESSING REQUIRES THESE TO BE SPLIT UP.
-  # Combine cell-to-road and road-to-plant miles, and then trim the old columns
-  # study_area_FCID[,TotalRoad_miles := RoadToPlant_miles + CellToRoadDist_miles]
-  # study_area_FCID[,':='(RoadToPlant_miles = NULL, CellToRoadDist_miles = NULL)]
-  
-  # Now to determine equipment. This will vary depending on whther the harvest is high or low volume; this will be determined through average cell residue density
-  
-  #######################################################################################################################################
-  # Calculate harvest/processing emissions, and adjust mass totals.
-  #######################################################################################################################################
-  high_volume_cell_threshold_density <- 13 # BDT/scre; remember that tons/acre is the unit for all of our residues.
-  
-  #######################################################################################################################################
-  #######################################################################################################################################
-  # Here are bad words I know you'll search for before any of this gets published. fuck shit damn hell
-  # Did you remember to update the equipment emissions? Right now there are dummy variable for SO2, because the equipment variables we 
-  # had were for SOx and fire only reports for SO2. fuck shit damn hell.
-  #######################################################################################################################################
-  #######################################################################################################################################
-  harvest_processing_output <- harvest_processing_fun(study_area_FCID, high_volume_cell_threshold_density)
-  harvest_processing_emissions <- harvest_processing_output[[1]]
-  transportation_emissions <- harvest_processing_output[[2]]
-  study_area_FCID <- harvest_processing_output[[3]]
-  
-  #######################################################################################################################################
-  # Calculate power plant emissions.
-  #######################################################################################################################################
-  power_emission_factors <- data.table(read.csv(user_inputs[variable=='power_plant_emissions_filepath',value]))
-  
-  if(user_inputs[variable=='power_plant_location',value]=='Nearest') { # Multiple potential power plant locations
-    power_plant_output <- power_plant_fun(study_area_FCID, power_emission_factors, unique(study_area_FCID[,plant_location]))
-    power_plant_emissions <- power_plant_output[[1]]
-    power_plant_production <- power_plant_output[[2]]
-  } else { # Single power plant location
-    power_plant_output <- power_plant_fun(study_area_FCID, power_emission_factors, user_inputs[variable=='power_plant_location',value])
-    power_plant_emissions <- power_plant_output[[1]]
-    power_plant_production <- power_plant_output[[2]]
-  }
-  
-  # Add the harvesting and power plant emissions to year 1 of the century emissions profile. Emissions are given in kg, we need them in tonnes
-  century_emissions_profile[1,':='(CO2_tonnes = (harvest_processing_emissions[,CO2_kg] + transportation_emissions[,CO2_kg] + power_plant_emissions[,CO2_kg])/1000,
-                                   CO_tonnes = (harvest_processing_emissions[,CO_kg] + transportation_emissions[,CO_kg] + power_plant_emissions[,CO_kg])/1000,
-                                   CH4_tonnes = (harvest_processing_emissions[,CH4_kg] + transportation_emissions[,CH4_kg] + power_plant_emissions[,CH4_kg])/1000,
-                                   NOx_tonnes = (harvest_processing_emissions[,NOx_kg] + transportation_emissions[,NOx_kg] + power_plant_emissions[,NOx_kg])/1000,
-                                   PMUnder10um_tonnes = (harvest_processing_emissions[,PMUnder10um_kg] + transportation_emissions[,PMUnder10um_kg] + power_plant_emissions[,PMUnder10um_kg])/1000,
-                                   PMUnder2.5um_tonnes = (harvest_processing_emissions[,PMUnder2.5um_kg] + transportation_emissions[,PMUnder2.5um_kg] + power_plant_emissions[,PMUnder2.5um_kg])/1000,
-                                   SO2_tonnes = (harvest_processing_emissions[,SO2_kg] + transportation_emissions[,SO2_kg] + power_plant_emissions[,SO2_kg])/1000,
-                                   VOC_tonnes = (harvest_processing_emissions[,VOC_kg] + transportation_emissions[,VOC_kg] + power_plant_emissions[,VOC_kg])/1000,
-                                   char_tonnes = (harvest_processing_emissions[,char_kg] + transportation_emissions[,char_kg] + power_plant_emissions[,char_kg])/1000)]
-}
-
-```
-
-
-We need to remove the residue segemnt for loop. We don't need it, and it slows processing down considerably. Modular code seems to be just as fast, and makes comprehension easier.
-Keep the modular code, and remove the residue segment for loop; once we have completed our formula verification, remove the emissions_year_i and char_year_i rows (there are 200 total).
-See code examples below for clarification.
-
-Modular code. "2019-03-22 12:37:02 PDT" to "2019-03-22 14:08:06 PDT"
-```{r}
-Sys.time()
-for (year.i in 1:10) {
-  print(year.i)
-  
-  # A few things will happen only in year 1 (if at all): residues collection (and processing, transportations, and power plant use), and prescribed burning.
-  # Harvesting, processing, transportation, and power plant emissions will have been addressed already, because there is an easy variable (biomass_collection)
-  # Calculate emissions and mass loss from these activities before decay/wildfire. Note: they will affect different residue segments, so it does not matter 
-  # if if prescribed burning or collection comes first.
-  if(year.i==1) {
     
-    # Step one: figure out the emission factors, combustion fractions, and char fractions
-    study_area_FCID <- prescribed_burn_processing_fun(study_area_FCID,user_inputs[variable=="wildfire_data_directory",value],scenario_ID,tile_list)
-    
-    # Make sure that the residue segment matches correctly with the prescribed burn method
-    if(user_inputs[variable=='burn_type',value] == "Broadcast") {
-      prescribed_burn_output <- prescribed_burn_fun(study_area_FCID, user_inputs[variable=='burn_type',value])
-      prescribed_burn_emissions <- prescribed_burn_output[[1]]
-      study_area_FCID <- prescribed_burn_output[[2]]
-    }
-    if(user_inputs[variable=='burn_type',value] == "Pile") {
-      prescribed_burn_output <- prescribed_burn_fun(study_area_FCID, user_inputs[variable=='burn_type',value])
-      prescribed_burn_emissions <- prescribed_burn_output[[1]]
-      study_area_FCID <- prescribed_burn_output[[2]]
-    }
-    if(user_inputs[variable=='burn_type',value] == "Pile and Broadcast") {
-      prescribed_burn_output <- prescribed_burn_fun(study_area_FCID, "Pile")
-      prescribed_burn_emissions <- prescribed_burn_output[[1]]
-      study_area_FCID <- prescribed_burn_output[[2]]
+    # Add a column to indicate the specific plant location. This is set in the user variables; if the selected location is "NearestOperationalPlant", it works differently
+    if(user_inputs[variable=="power_plant_location",value]=="NearestOperationalPlant") {
+      # There will be multiple plant IDs. We will need to read in the plant ID raster, pair in codes from a plant ID raster, and fill in any gaps in the operational plant raster with a default max distance.
+      nearest_plant_raster <- raster(paste(user_inputs[variable=="transportation_filepath",value],"NearestPlantID.tif",sep=""))
+      # The "NearestPlantID" raster is ever so slightly misaligned with the other rasters, despite having the same projection. So, we resample it.
+      # Remember to select "ngb" (nearest neighbor) as the method.
+      nearest_plant_resampled <- projectRaster(nearest_plant_raster,road_to_plant_raster,method = "ngb")
+      nearest_plant <- as.data.frame(nearest_plant_resampled,xy=T)
+      nearest_plant <- data.table(nearest_plant)
+      setkey(nearest_plant,NearestPlantID)
       
-      prescribed_burn_output <- prescribed_burn_fun(study_area_FCID, "Broadcast")
-      prescribed_burn_emissions <- prescribed_burn_emissions + prescribed_burn_output[[1]]
-      study_area_FCID <- prescribed_burn_output[[2]]
+      # Read in location ID names, and join with nearest_plant
+      location_names <- data.table(read.csv(user_inputs[variable=="power_plant_location_code_filepath",value]))
+      setkey(location_names,OID)
+      nearest_plant <- location_names[nearest_plant]
+      
+      # Trim unneeded columns, and re-name
+      nearest_plant[,':='(OID=NULL,Status=NULL, MW_Nmpl=NULL, Prjct_T=NULL, City=NULL, County=NULL)]
+      setnames(nearest_plant,"Name","plant_location")
+      
+      # Round coordinates
+      nearest_plant[,':='(x=round(x,digits=1),y=round(y,digits=1))]
+      
+      # Combine with road_to_plant
+      setkey(road_to_plant,x,y)
+      setkey(nearest_plant,x,y)
+      road_to_plant <- road_to_plant[nearest_plant]
+    } else {
+      road_to_plant[,plant_location:=user_inputs[variable=="power_plant_location",value]]
+    }
+    case.data <- road_to_plant[case.data]
+    
+    # Now to determine equipment. This will vary depending on whther the harvest is high or low volume; this will be determined through average cell residue density
+    
+    #######################################################################################################################################
+    # Calculate harvest/processing emissions, and adjust mass totals.
+    #######################################################################################################################################
+    high_volume_cell_threshold_density <- 13 # BDT/scre; remember that tons/acre is the unit for all of our residues.
+    
+    #######################################################################################################################################
+    #######################################################################################################################################
+    # Here are bad words I know you'll search for before any of this gets published. fuck shit damn hell
+    warning("Did you remember to update the equipment emissions? Right now there are dummy variable for SO2, because the equipment variables we had were for SOx and fire only reports for SO2. fuck shit damn hell.")
+    #######################################################################################################################################
+    #######################################################################################################################################
+    harvest_processing_output <- harvest_processing_fun(case.data, high_volume_cell_threshold_density)
+    harvest_processing_emissions <- harvest_processing_output[[1]]
+    transportation_emissions <- harvest_processing_output[[2]]
+    case.data <- harvest_processing_output[[3]]
+    
+    #######################################################################################################################################
+    # Calculate power plant emissions.
+    #######################################################################################################################################
+    power_emission_factors <- data.table(read.csv(user_inputs[variable=='power_plant_emissions_filepath',value]))
+    
+    if(user_inputs[variable=='power_plant_location',value]=='Nearest') { # Multiple potential power plant locations
+      power_plant_output <- power_plant_fun(case.data, power_emission_factors, unique(case.data[,plant_location]))
+      power_plant_emissions <- power_plant_output[[1]]
+      power_plant_production <- power_plant_output[[2]]
+    } else { # Single power plant location
+      power_plant_output <- power_plant_fun(case.data, power_emission_factors, user_inputs[variable=='power_plant_location',value])
+      power_plant_emissions <- power_plant_output[[1]]
+      power_plant_production <- power_plant_output[[2]]
     }
     
-    # Add to the century emissions profile
-    century_emissions_profile[year.i,':='(CO2_tonnes = CO2_tonnes + prescribed_burn_emissions[,CO2_tonnes],
-                                          CO_tonnes = CO_tonnes + prescribed_burn_emissions[,CO_tonnes],
-                                          CH4_tonnes = CH4_tonnes + prescribed_burn_emissions[,CH4_tonnes],
-                                          NOx_tonnes = NOx_tonnes + prescribed_burn_emissions[,NOx_tonnes],
-                                          PMUnder10um_tonnes = PMUnder10um_tonnes + prescribed_burn_emissions[,PMUnder10um_tonnes],
-                                          PMUnder2.5um_tonnes = PMUnder2.5um_tonnes + prescribed_burn_emissions[,PMUnder2.5um_tonnes],
-                                          SO2_tonnes = SO2_tonnes + prescribed_burn_emissions[,SO2_tonnes],
-                                          VOC_tonnes = VOC_tonnes + prescribed_burn_emissions[,VOC_tonnes],
-                                          char_tonnes = char_tonnes + prescribed_burn_emissions[,char_tonnes])]
+    # Harvesting and power plant emissions are given in kg, we need them in tonnes
+    harvest_processing_emissions[,':='(CO2_kg = CO2_kg/1000,
+                                        CO_kg = CO_kg/1000,
+                                        CH4_kg = CH4_kg/1000,
+                                        NOx_kg = NOx_kg/1000,
+                                        PMUnder10um_kg = PMUnder10um_kg/1000,
+                                        PMUnder2.5um_kg = PMUnder2.5um_kg/1000,
+                                        SO2_kg = SO2_kg/1000,
+                                        VOC_kg = VOC_kg/1000,
+                                        char_kg = char_kg/1000)]
     
-    #######################################################################
-    # We will keep the prescribed burn emissions and save them at the end.
-    #######################################################################
+    setnames(harvest_processing_emissions,c("CO2_kg", "CO_kg", "CH4_kg", "NOx_kg", "PMUnder10um_kg","PMUnder2.5um_kg", "SO2_kg", "VOC_kg", "char_kg"),c("CO2_tonnes", "CO_tonnes", "CH4_tonnes", "NOx_tonnes", "PMUnder10um_tonnes", "PMUnder2.5um_tonnes", "SO2_tonnes", "VOC_tonnes", "char_tonnes"))
     
-    # Clear out the combustion/char fractions and emissions factors; they will be re-added with wildfire data.
-    study_area_FCID[,':='(CWD_Scattered_CombustionFrac = NULL,FWD_Scattered_CombustionFrac = NULL, Foliage_Scattered_CombustionFrac = NULL, Duff_Scattered_CombustionFrac = NULL, CWD_Scattered_CharFrac = NULL, FWD_Scattered_CharFrac = NULL, Duff_Scattered_CH4_EmFac = NULL, Foliage_Scattered_CH4_EmFac = NULL, FWD_Scattered_CH4_EmFac = NULL, CWD_Scattered_CH4_EmFac = NULL, Piled_CH4_EmFac = NULL, Duff_Scattered_CO_EmFac = NULL, Foliage_Scattered_CO_EmFac = NULL, FWD_Scattered_CO_EmFac = NULL, CWD_Scattered_CO_EmFac = NULL, Piled_CO_EmFac = NULL, Duff_Scattered_NOx_EmFac = NULL, Foliage_Scattered_NOx_EmFac = NULL, FWD_Scattered_NOx_EmFac = NULL, CWD_Scattered_NOx_EmFac = NULL, Piled_NOx_EmFac = NULL, Duff_Scattered_PM10_EmFac = NULL, Foliage_Scattered_PM10_EmFac = NULL, FWD_Scattered_PM10_EmFac = NULL, CWD_Scattered_PM10_EmFac = NULL, Piled_PM10_EmFac = NULL, Duff_Scattered_PM2.5_EmFac = NULL, Foliage_Scattered_PM2.5_EmFac = NULL, FWD_Scattered_PM2.5_EmFac = NULL, CWD_Scattered_PM2.5_EmFac = NULL, Piled_PM2.5_EmFac = NULL, Duff_Scattered_SO2_EmFac = NULL, Foliage_Scattered_SO2_EmFac = NULL, FWD_Scattered_SO2_EmFac = NULL, CWD_Scattered_SO2_EmFac = NULL, Piled_SO2_EmFac = NULL, Duff_Scattered_VOC_EmFac = NULL, Foliage_Scattered_VOC_EmFac = NULL, FWD_Scattered_VOC_EmFac = NULL, CWD_Scattered_VOC_EmFac = NULL, Piled_VOC_EmFac = NULL)] 
+    transportation_emissions[,':='(CO2_kg = CO2_kg/1000,
+                                    CO_kg = CO_kg/1000,
+                                    CH4_kg = CH4_kg/1000,
+                                        NOx_kg = NOx_kg/1000,
+                                        PMUnder10um_kg = PMUnder10um_kg/1000,
+                                        PMUnder2.5um_kg = PMUnder2.5um_kg/1000,
+                                        SO2_kg = SO2_kg/1000,
+                                        VOC_kg = VOC_kg/1000,
+                                        char_kg = char_kg/1000)]
+    
+    setnames(transportation_emissions,c("CO2_kg", "CO_kg", "CH4_kg", "NOx_kg", "PMUnder10um_kg","PMUnder2.5um_kg", "SO2_kg", "VOC_kg", "char_kg"),c("CO2_tonnes", "CO_tonnes", "CH4_tonnes", "NOx_tonnes", "PMUnder10um_tonnes", "PMUnder2.5um_tonnes", "SO2_tonnes", "VOC_tonnes", "char_tonnes"))
+    
+    power_plant_emissions[,':='(CO2_kg = CO2_kg/1000,
+                                    CO_kg = CO_kg/1000,
+                                    CH4_kg = CH4_kg/1000,
+                                        NOx_kg = NOx_kg/1000,
+                                        PMUnder10um_kg = PMUnder10um_kg/1000,
+                                        PMUnder2.5um_kg = PMUnder2.5um_kg/1000,
+                                        SO2_kg = SO2_kg/1000,
+                                        VOC_kg = VOC_kg/1000,
+                                        char_kg = char_kg/1000)]
+    
+    setnames(power_plant_emissions,c("CO2_kg", "CO_kg", "CH4_kg", "NOx_kg", "PMUnder10um_kg","PMUnder2.5um_kg", "SO2_kg", "VOC_kg", "char_kg"),c("CO2_tonnes", "CO_tonnes", "CH4_tonnes", "NOx_tonnes", "PMUnder10um_tonnes", "PMUnder2.5um_tonnes", "SO2_tonnes", "VOC_tonnes", "char_tonnes"))
   }
   
-  # Figure out the emission factors, combustion fractions, and char fractions for wildfire.
-  study_area_FCID <- annual_fire_detail_fun(study_area_FCID,year.i,wildfire_data,user_inputs[variable=="wildfire_data_directory",value],study_area_raster)
+  for (year.i in 1:24) {
+    print(year.i)
+    # A few things will happen only in year 1 (if at all): residues collection (and processing, transportations, and power plant use), and prescribed burning.
+    # Harvesting, processing, transportation, and power plant emissions will have been addressed already, because there is an easy variable (biomass_collection)
+    # to differentiate when this does or does not happen. Calculate emissions and mass loss from these activities before decay/wildfire. Note: prescribed burn and
+    # residue collection will affect different residue segments, so it does not matter which comes first.
+    if(year.i==1) {
+      
+      # Step one: figure out the emission factors, combustion fractions, and char fractions
+      case.data <- prescribed_burn_processing_fun(case.data,user_inputs[variable=="wildfire_data_directory",value],scenario_ID,tile_list)
+      
+      # Make sure that the residue segment matches correctly with the prescribed burn method
+      if(user_inputs[variable=='burn_type',value] == "Broadcast") {
+        prescribed_burn_output <- prescribed_burn_fun(case.data, user_inputs[variable=='burn_type',value])
+        prescribed_burn_emissions <- prescribed_burn_output[[1]]
+        case.data <- prescribed_burn_output[[2]]
+      }
+      if(user_inputs[variable=='burn_type',value] == "Pile") {
+        warning("Residues remaining after pile burning are added to COARSE scattered debris - a fire model inconsistency we should fix in version 1.2")
+        prescribed_burn_output <- prescribed_burn_fun(case.data, user_inputs[variable=='burn_type',value])
+        prescribed_burn_emissions <- prescribed_burn_output[[1]]
+        case.data <- prescribed_burn_output[[2]]
+      }
+      if(user_inputs[variable=='burn_type',value] == "Pile and Broadcast") {
+        prescribed_burn_output <- prescribed_burn_fun(case.data, "Broadcast")
+        prescribed_burn_emissions <- prescribed_burn_output[[1]]
+        case.data <- prescribed_burn_output[[2]]
+        
+        warning("Residues remaining after pile burning are added to COARSE scattered debris - a fire model inconsistency we should fix in version 1.2")
+        # Because of this transmutation, pile burning has to happen after scattered debris, else it will be burned twice.
+        prescribed_burn_output <- prescribed_burn_fun(case.data, "Pile")
+        prescribed_burn_emissions <- prescribed_burn_emissions + prescribed_burn_output[[1]]
+        case.data <- prescribed_burn_output[[2]]
+      }
+      
+      # Moving away from century_emissions_profile; 
+      # If a burn happened, add to the century emissions profile
+      # if(user_inputs[variable=='burn_type',value] != "None") {
+      #   century_emissions_profile[year.i,':='(CO2_tonnes = CO2_tonnes + prescribed_burn_emissions[,CO2_tonnes],
+      #                                         CO_tonnes = CO_tonnes + prescribed_burn_emissions[,CO_tonnes],
+      #                                         CH4_tonnes = CH4_tonnes + prescribed_burn_emissions[,CH4_tonnes],
+      #                                         NOx_tonnes = NOx_tonnes + prescribed_burn_emissions[,NOx_tonnes],
+      #                                         PMUnder10um_tonnes = PMUnder10um_tonnes + prescribed_burn_emissions[,PMUnder10um_tonnes],
+      #                                         PMUnder2.5um_tonnes = PMUnder2.5um_tonnes + prescribed_burn_emissions[,PMUnder2.5um_tonnes],
+      #                                         SO2_tonnes = SO2_tonnes + prescribed_burn_emissions[,SO2_tonnes],
+      #                                         VOC_tonnes = VOC_tonnes + prescribed_burn_emissions[,VOC_tonnes],
+      #                                         char_tonnes = char_tonnes + prescribed_burn_emissions[,char_tonnes])]
+      # }
+      #######################################################################
+      # We will keep the prescribed burn emissions and save them at the end.
+      #######################################################################
+      
+      # Clear out the combustion/char fractions and emissions factors; they will be re-added with wildfire data.
+      case.data[,':='(CWD_Scattered_CombustionFrac = NULL,FWD_Scattered_CombustionFrac = NULL, Foliage_Scattered_CombustionFrac = NULL, Duff_Scattered_CombustionFrac = NULL, CWD_Scattered_CharFrac = NULL, FWD_Scattered_CharFrac = NULL, Duff_Scattered_CH4_EmFac = NULL, Foliage_Scattered_CH4_EmFac = NULL, FWD_Scattered_CH4_EmFac = NULL, CWD_Scattered_CH4_EmFac = NULL, Piled_CH4_EmFac = NULL, Duff_Scattered_CO_EmFac = NULL, Foliage_Scattered_CO_EmFac = NULL, FWD_Scattered_CO_EmFac = NULL, CWD_Scattered_CO_EmFac = NULL, Piled_CO_EmFac = NULL, Duff_Scattered_NOx_EmFac = NULL, Foliage_Scattered_NOx_EmFac = NULL, FWD_Scattered_NOx_EmFac = NULL, CWD_Scattered_NOx_EmFac = NULL, Piled_NOx_EmFac = NULL, Duff_Scattered_PM10_EmFac = NULL, Foliage_Scattered_PM10_EmFac = NULL, FWD_Scattered_PM10_EmFac = NULL, CWD_Scattered_PM10_EmFac = NULL, Piled_PM10_EmFac = NULL, Duff_Scattered_PM2.5_EmFac = NULL, Foliage_Scattered_PM2.5_EmFac = NULL, FWD_Scattered_PM2.5_EmFac = NULL, CWD_Scattered_PM2.5_EmFac = NULL, Piled_PM2.5_EmFac = NULL, Duff_Scattered_SO2_EmFac = NULL, Foliage_Scattered_SO2_EmFac = NULL, FWD_Scattered_SO2_EmFac = NULL, CWD_Scattered_SO2_EmFac = NULL, Piled_SO2_EmFac = NULL, Duff_Scattered_VOC_EmFac = NULL, Foliage_Scattered_VOC_EmFac = NULL, FWD_Scattered_VOC_EmFac = NULL, CWD_Scattered_VOC_EmFac = NULL, Piled_VOC_EmFac = NULL)] 
+    }
+    
+    # Figure out the emission factors, combustion fractions, and char fractions for wildfire.
+    case.data <- annual_fire_detail_fun(case.data,year.i,wildfire_data,user_inputs[variable=="wildfire_data_directory",value],study_area_raster)
+    
+    # Calculate the total decayed mass. "Previously Fired" must be a category; addressing previously fired material decay in each segment will run that decay 3 times over.
+    decay_output <- decay_fun(case.data,residue.disposition = "Scattered",year.i)
+    decay_emissions <- decay_output[[1]]
+    case.data <- decay_output[[2]]
+    
+    decay_output <- decay_fun(case.data,residue.disposition = "Piled",year.i)
+    decay_emissions <- decay_emissions + decay_output[[1]]
+    case.data <- decay_output[[2]]
+    
+    decay_output <- decay_fun(case.data,residue.disposition = "prev_fired",year.i)
+    decay_emissions <- decay_emissions + decay_output[[1]]
+    case.data <- decay_output[[2]]
+    
+    # Repeat for duff. Because we only run duff decay once, we can address both previously fired and non-fired duff.
+    decay_output <- duff_decay_fun(case.data,year.i)
+    decay_emissions <- decay_emissions + decay_output[[1]]
+    case.data <- decay_output[[2]]
+    
+    decay_emissions_profile[year.i,':='(CO2_tonnes = CO2_tonnes + decay_emissions[,CO2_tonnes],
+                                        CO_tonnes = CO_tonnes + decay_emissions[,CO_tonnes],
+                                        CH4_tonnes = CH4_tonnes + decay_emissions[,CH4_tonnes],
+                                        NOx_tonnes = NOx_tonnes + decay_emissions[,NOx_tonnes],
+                                        PMUnder10um_tonnes = PMUnder10um_tonnes + decay_emissions[,PMUnder10um_tonnes],
+                                        PMUnder2.5um_tonnes = PMUnder2.5um_tonnes + decay_emissions[,PMUnder2.5um_tonnes],
+                                        SO2_tonnes = SO2_tonnes + decay_emissions[,SO2_tonnes],
+                                        VOC_tonnes = VOC_tonnes + decay_emissions[,VOC_tonnes],
+                                        char_tonnes = char_tonnes + decay_emissions[,char_tonnes]
+                            )]
+    
+    # Address wildfire emissions and mass loss. 
+    wildfire_output <- annual_wildfire_fun(case.data,residue.disposition = "Scattered",year.i)
+    wildfire_emissions <- wildfire_output[[1]]
+    case.data <- wildfire_output[[2]]
+    
+    if(year.i==1|year.i==100) {warning("ALL pile residues remaining after wildfire are added to COARSE previously fired debris - a fire model inconsistency we should fix in version 1.2")}
+    wildfire_output <- annual_wildfire_fun(case.data,residue.disposition = "Piled",year.i)
+    wildfire_emissions <- wildfire_emissions + wildfire_output[[1]]
+    case.data <- wildfire_output[[2]]
+    
+    wildfire_output <- duff_annual_wildfire_fun(case.data,year.i)
+    wildfire_emissions <- wildfire_emissions + wildfire_output[[1]]
+    case.data <- wildfire_output[[2]]
+    
+    # Add decay and wildfire to the century emissions profile
+    wildfire_emissions_profile[year.i,':='(CO2_tonnes = CO2_tonnes + wildfire_emissions[,CO2_tonnes],
+                                           CO_tonnes = CO_tonnes + wildfire_emissions[,CO_tonnes],
+                                           CH4_tonnes = CH4_tonnes + wildfire_emissions[,CH4_tonnes],
+                                           NOx_tonnes = NOx_tonnes + wildfire_emissions[,NOx_tonnes],
+                                           PMUnder10um_tonnes = PMUnder10um_tonnes + wildfire_emissions[,PMUnder10um_tonnes],
+                                           PMUnder2.5um_tonnes = PMUnder2.5um_tonnes + wildfire_emissions[,PMUnder2.5um_tonnes],
+                                           SO2_tonnes = SO2_tonnes + wildfire_emissions[,SO2_tonnes],
+                                           VOC_tonnes = VOC_tonnes + wildfire_emissions[,VOC_tonnes],
+                                           char_tonnes = char_tonnes + wildfire_emissions[,char_tonnes]
+                               )]
+    
+    # Clear out the combustion/char fractions and emissions factors; they will be re-added next year.
+    case.data[,':='(Wildfire_Probability = NULL, CWD_Scattered_CombustionFrac = NULL, FWD_Scattered_CombustionFrac = NULL, Foliage_Scattered_CombustionFrac = NULL, Duff_Scattered_CombustionFrac = NULL, 
+                          CWD_Scattered_CharFrac = NULL, FWD_Scattered_CharFrac = NULL, 
+                          Duff_Scattered_CH4_EmFac = NULL, Foliage_Scattered_CH4_EmFac = NULL, FWD_Scattered_CH4_EmFac = NULL, CWD_Scattered_CH4_EmFac = NULL, Piled_CH4_EmFac = NULL,
+                          Duff_Scattered_CO_EmFac = NULL, Foliage_Scattered_CO_EmFac = NULL, FWD_Scattered_CO_EmFac = NULL, CWD_Scattered_CO_EmFac = NULL, Piled_CO_EmFac = NULL,
+                          Duff_Scattered_NOx_EmFac = NULL, Foliage_Scattered_NOx_EmFac = NULL, FWD_Scattered_NOx_EmFac = NULL, CWD_Scattered_NOx_EmFac = NULL, Piled_NOx_EmFac = NULL, 
+                          Duff_Scattered_PM10_EmFac = NULL, Foliage_Scattered_PM10_EmFac = NULL, FWD_Scattered_PM10_EmFac = NULL, CWD_Scattered_PM10_EmFac = NULL, Piled_PM10_EmFac = NULL, 
+                          Duff_Scattered_PM2.5_EmFac = NULL, Foliage_Scattered_PM2.5_EmFac = NULL, FWD_Scattered_PM2.5_EmFac = NULL, CWD_Scattered_PM2.5_EmFac = NULL, Piled_PM2.5_EmFac = NULL,
+                          Duff_Scattered_SO2_EmFac = NULL, Foliage_Scattered_SO2_EmFac = NULL, FWD_Scattered_SO2_EmFac = NULL, CWD_Scattered_SO2_EmFac = NULL, Piled_SO2_EmFac = NULL, 
+                          Duff_Scattered_VOC_EmFac = NULL, Foliage_Scattered_VOC_EmFac = NULL, FWD_Scattered_VOC_EmFac = NULL, CWD_Scattered_VOC_EmFac = NULL, Piled_VOC_EmFac = NULL)] 
+  }
+  # We need several 100 year emissions profiles: century_emissions_profile (the combined emissions)
   
-  # Calculate the total decayed mass. "Previously Fired" must be a category; addressing previously fired material decay in each segment will run that decay 3 times over.
-  decay_output <- decay_fun(study_area_FCID,residue.disposition = "Scattered",year.i)
-  decay_emissions <- decay_output[[1]]
-  study_area_FCID <- decay_output[[2]]
+  # In addition to the 100 year emission profiles, we need:
+  # 1) The total available residue base (Piled_INITIAL + Scattered_INITIAL + Recovered_INITIAL)
+  total_residue_base <- case.data[,sum(Recovered_CWD_tonnesAcre_INITIAL, Recovered_FWD_tonnesAcre_INITIAL, Recovered_Foliage_tonnesAcre_INITIAL, Piled_CWD_tonnesAcre_INITIAL, Piled_FWD_tonnesAcre_INITIAL, Piled_Foliage_tonnesAcre_INITIAL, Scattered_CWD_tonnesAcre_INITIAL, Scattered_FWD_tonnesAcre_INITIAL, Scattered_Foliage_tonnesAcre_INITIAL)] * cell_to_acres
   
-  decay_output <- decay_fun(study_area_FCID,residue.disposition = "Piled",year.i)
-  decay_emissions <- decay_emissions + decay_output[[1]]
-  study_area_FCID <- decay_output[[2]]
+  # 2) The total technically recovered residue (Recovered_INITIAL)
+  technically_recoverable_residue <- case.data[,sum(Recovered_CWD_tonnesAcre_INITIAL, Recovered_FWD_tonnesAcre_INITIAL, Recovered_Foliage_tonnesAcre_INITIAL)] * cell_to_acres
   
-  decay_output <- decay_fun(study_area_FCID,residue.disposition = "prev_fired",year.i)
-  decay_emissions <- decay_emissions + decay_output[[1]]
-  study_area_FCID <- decay_output[[2]]
+  # 3) The total mass sent to the power plant (mass_to_plant)
+  total_mass_to_power_plant <- case.data[,sum(mass_to_plant_tonnesAcre)] * cell_to_acres
   
-  # Repeat for duff. Because we only run duff decay once, we can address both previously fired and non-fired duff.
-  decay_output <- duff_decay_fun(study_area_FCID,year.i)
-  decay_emissions <- decay_emissions + decay_output[[1]]
-  study_area_FCID <- decay_output[[2]]
+  # 4) The total energy generated, in MWHe. This is power_plant_production
+  # power_plant_production 
   
-  setkey(study_area_FCID,x,y)
-  write.csv(study_area_FCID[1:1000,],file="~/Desktop/CBREC debugging/base data csvs/post-decay-year-one-1000rows-scen255.csv",row.names = F)
-  
-  # Address wildfire emissions and mass loss. 
-  wildfire_output <- annual_wildfire_fun(study_area_FCID,residue.disposition = "Scattered",year.i)
-  wildfire_emissions <- wildfire_output[[1]]
-  study_area_FCID <- wildfire_output[[2]]
-  
-  wildfire_output <- annual_wildfire_fun(study_area_FCID,residue.disposition = "Piled",year.i)
-  wildfire_emissions <- wildfire_emissions + wildfire_output[[1]]
-  study_area_FCID <- wildfire_output[[2]]
-  
-  wildfire_output <- duff_annual_wildfire_fun(study_area_FCID,year.i)
-  wildfire_emissions <- wildfire_emissions + wildfire_output[[1]]
-  study_area_FCID <- wildfire_output[[2]]
-  
-  # Add decay and wildfire to the century emissions profile
-  century_emissions_profile[year.i,':='(CO2_tonnes = CO2_tonnes + decay_emissions[,CO2_tonnes] + wildfire_emissions[,CO2_tonnes],
-                                   CO_tonnes = CO_tonnes + decay_emissions[,CO_tonnes] + wildfire_emissions[,CO_tonnes],
-                                   CH4_tonnes = CH4_tonnes + decay_emissions[,CH4_tonnes] + wildfire_emissions[,CH4_tonnes],
-                                   NOx_tonnes = NOx_tonnes + decay_emissions[,NOx_tonnes] + wildfire_emissions[,NOx_tonnes],
-                                   PMUnder10um_tonnes = PMUnder10um_tonnes + decay_emissions[,PMUnder10um_tonnes] + wildfire_emissions[,PMUnder10um_tonnes],
-                                   PMUnder2.5um_tonnes = PMUnder2.5um_tonnes + decay_emissions[,PMUnder2.5um_tonnes] + wildfire_emissions[,PMUnder2.5um_tonnes],
-                                   SO2_tonnes = SO2_tonnes + decay_emissions[,SO2_tonnes] + wildfire_emissions[,SO2_tonnes],
-                                   VOC_tonnes = VOC_tonnes + decay_emissions[,VOC_tonnes] + wildfire_emissions[,VOC_tonnes],
-                                   char_tonnes = char_tonnes + decay_emissions[,char_tonnes] + wildfire_emissions[,char_tonnes]
-                           )]
-  
-  # Clear out the combustion/char fractions and emissions factors; they will be re-added next year.
-  study_area_FCID[,':='(Wildfire_Probability = NULL, CWD_Scattered_CombustionFrac = NULL, FWD_Scattered_CombustionFrac = NULL, Foliage_Scattered_CombustionFrac = NULL, Duff_Scattered_CombustionFrac = NULL, 
-                        CWD_Scattered_CharFrac = NULL, FWD_Scattered_CharFrac = NULL, 
-                        Duff_Scattered_CH4_EmFac = NULL, Foliage_Scattered_CH4_EmFac = NULL, FWD_Scattered_CH4_EmFac = NULL, CWD_Scattered_CH4_EmFac = NULL, Piled_CH4_EmFac = NULL,
-                        Duff_Scattered_CO_EmFac = NULL, Foliage_Scattered_CO_EmFac = NULL, FWD_Scattered_CO_EmFac = NULL, CWD_Scattered_CO_EmFac = NULL, Piled_CO_EmFac = NULL,
-                        Duff_Scattered_NOx_EmFac = NULL, Foliage_Scattered_NOx_EmFac = NULL, FWD_Scattered_NOx_EmFac = NULL, CWD_Scattered_NOx_EmFac = NULL, Piled_NOx_EmFac = NULL, 
-                        Duff_Scattered_PM10_EmFac = NULL, Foliage_Scattered_PM10_EmFac = NULL, FWD_Scattered_PM10_EmFac = NULL, CWD_Scattered_PM10_EmFac = NULL, Piled_PM10_EmFac = NULL, 
-                        Duff_Scattered_PM2.5_EmFac = NULL, Foliage_Scattered_PM2.5_EmFac = NULL, FWD_Scattered_PM2.5_EmFac = NULL, CWD_Scattered_PM2.5_EmFac = NULL, Piled_PM2.5_EmFac = NULL,
-                        Duff_Scattered_SO2_EmFac = NULL, Foliage_Scattered_SO2_EmFac = NULL, FWD_Scattered_SO2_EmFac = NULL, CWD_Scattered_SO2_EmFac = NULL, Piled_SO2_EmFac = NULL, 
-                        Duff_Scattered_VOC_EmFac = NULL, Foliage_Scattered_VOC_EmFac = NULL, FWD_Scattered_VOC_EmFac = NULL, CWD_Scattered_VOC_EmFac = NULL, Piled_VOC_EmFac = NULL)] 
-
-  
+  # Save data - with harvest
+  saveRDS(list(century_emissions_profile,harvest_processing_emissions,transportation_emissions,prescribed_burn_emissions,total_residue_base,technically_recoverable_residue,total_mass_to_power_plant,power_plant_production),file=paste("/Volumes/SharedData/Main Folder - Andy H/CBREC_output_directory/",scenario_ID_num,".rds",sep=""))
+  # without harvest
+  saveRDS(list(century_emissions_profile,total_residue_base,technically_recoverable_residue),file=paste("/Volumes/SharedData/Main Folder - Andy H/CBREC_output_directory/",scenario_ID_num,".rds",sep=""))
 }
-
-# In addition to the 100 year emission profiles, we need:
-# 1) The total available residue base (Piled_INITIAL + Scattered_INITIAL + Recovered_INITIAL)
-total_residue_base <- study_area_FCID[,sum(Recovered_CWD_tonsAcre_INITIAL, Recovered_FWD_tonsAcre_INITIAL, Recovered_Foliage_tonsAcre_INITIAL, Piled_CWD_tonsAcre_INITIAL, Piled_FWD_tonsAcre_INITIAL, Piled_Foliage_tonsAcre_INITIAL, Scattered_CWD_tonsAcre_INITIAL, Scattered_FWD_tonsAcre_INITIAL, Scattered_Foliage_tonsAcre_INITIAL)] * cell_to_acres
-
-# 2) The total technically recovered residue (Recovered_INITIAL)
-technically_recoverable_residue <- study_area_FCID[,sum(Recovered_CWD_tonsAcre_INITIAL, Recovered_FWD_tonsAcre_INITIAL, Recovered_Foliage_tonsAcre_INITIAL)] * cell_to_acres
-
-# 3) The total mass sent to the power plant (mass_to_plant)
-total_mass_to_power_plant <- study_area_FCID[,sum(mass_to_plant_tonsAcre)] * cell_to_acres
-
-# 4) The total energy generated, in MWHe. This is power_plant_production
-
-Sys.time()
-
 ```
 
 
