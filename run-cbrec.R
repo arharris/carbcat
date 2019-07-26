@@ -1,3 +1,28 @@
+#!/usr/bin/env Rscript --vanilla
+
+# =============================================================================
+# AUTHOR: Andrew Harris (andrew.harris@humboldt.edu)
+#         Schatz Energy Research Center
+#         Humboldt State University
+#
+# -------------------------------------------------------------------------
+# VERSION:
+#
+#   2019-07-26: Ported from .Rmd to .R command line tool
+#
+# -------------------------------------------------------------------------
+# OBJECTIVE:
+# This script will run the C-BREC model on input data specified by the user in 
+# the external input file.
+#
+# ---------------------------------
+# ACTION ITEMS:
+# Index   Description                                                      Status
+# -----   --------------------------------------------------------------   ------
+#
+# ---------------------------------
+# =============================================================================
+
 ###############################################
 # Source relevant module and function files.
 ###############################################
@@ -11,13 +36,33 @@ source("misc-functions.R")
 ###############################################
 # Load needed library functions
 ###############################################
-load.libraries(c("raster","rgdal","rgeos","tidyverse","beepr")) # beepr is for testing
+load.libraries(c("optparse","raster","rgdal","rgeos","tidyverse"))
+
+#########################
+# COMMAND LINE OPTIONS 
+#########################
+print("Command line options!")
+option_list <- list(
+  make_option(c("-v", "--verbose"), action="store_true", default=F, help="Print extra output [default]"),
+  make_option(c("-i", "--infile"), type="character", default='cbrec_inputs.csv', help="Input file specifying scenario and study area [default \"%default\"]",metavar="input-file")
+)
+if(interactive()){
+  args <- parse_args(OptionParser(option_list = option_list))
+}else{
+  args <- parse_args(OptionParser(option_list = option_list))
+  if(!file.exists(args$infile)) {
+    stop("Input file does not exist. Check filepath.")
+  }
+}
+
+user_input_filepath <- args$infile
+
+print(user_input_filepath)
 
 #############################################################################################################################################
 # To make multiple runs with different options, easier, we're putting all user options and filepaths in an external csv file,
 # which we read in here.
 #############################################################################################################################################
-user_input_filepath <- '/Volumes/744GB-Storage/Dropbox/serc/carbcat/cbrec_inputs_261.csv'
 user_inputs <- data.table(read.csv(user_input_filepath, stringsAsFactors = FALSE))
 initial_user_inputs <- copy(user_inputs)
 
@@ -51,7 +96,7 @@ if(user_inputs[variable=='ag_or_forest',value]=='forest') {
   
   # If the user inputs specify a study area mask file, load the shapefile, crop the original raster to the shapefile extents, and mask the raster to the shape file.
   if(!is.na(user_inputs[variable=='study_area_mask_file',value])) {
-    study_area_mask <- readOGR(user_inputs[variable=='study_area_mask_file',value])
+    study_area_mask <- readOGR(user_inputs[variable=='study_area_mask_file',value],verbose=F)
     study_area_raster <- crop(study_area_raster,extent(study_area_mask))
     study_area_raster <- mask(study_area_raster,study_area_mask)
     slope_raster <- crop(slope_raster,extent(study_area_mask))
@@ -318,7 +363,7 @@ for(user.input.row.i in 1:nrow(user_input_iterations)) {
   )]
   
   # Trim out the columns we no longer need.
-  warning("This chunk of code will need to be re-written if we remove bark columns from the scenario matrix")
+  #warning("This chunk of code will need to be re-written if we remove bark columns from the scenario matrix")
   case.data[,':='(Slope=NULL, Recovered_Stem9Plus = NULL, Stem9Plus_tonsAcre = NULL, Recovered_Stem6to9 = NULL, Stem6to9_tonsAcre = NULL, Recovered_Stem4to6 = NULL,
                   Stem4to6_tonsAcre = NULL, Recovered_Bark9Plus = NULL, Recovered_Bark6to9 = NULL, Recovered_Bark4to6 = NULL, Recovered_Branch = NULL, Branch_tonsAcre = NULL, 
                   Recovered_Foliage = NULL, Foliage_tonsAcre = NULL, Merchantable_Stem9Plus = NULL, Merchantable_Stem6to9 = NULL, Merchantable_Stem4to6 = NULL,  Merchantable_Bark9Plus = NULL,
@@ -335,7 +380,7 @@ for(user.input.row.i in 1:nrow(user_input_iterations)) {
   #########################################################################################################################################
   
   # Load up the full tile shape file
-  full_tile_set <- readOGR(user_inputs[variable=="tile_shape_file",value])
+  full_tile_set <- readOGR(user_inputs[variable=="tile_shape_file",value],verbose=F)
   study_area_tiles <- raster::intersect(study_area_mask,full_tile_set)
   
   # To get the tile IDs, convert study_area_tiles into a data frame and extract the ID column.
@@ -867,7 +912,7 @@ for(user.input.row.i in 1:nrow(user_input_iterations)) {
       wildfire.VOC_tonnes = wildfire.VOC_tonnes + wildfire_output[[1]]$VOC_tonnes
     )]
     
-    if(year.i==1|year.i==100) {warning("ALL pile residues remaining after wildfire are added to COARSE previously fired debris - a fire model inconsistency we should fix in version 1.2")}
+    if(year.i==100) {warning("ALL pile residues remaining after wildfire are added to COARSE previously fired debris - a fire model inconsistency we should fix in version 1.2")}
     wildfire_output <- annual_wildfire_fun(case.data,residue.disposition = "Piled",year.i)
     # 2 items from wildfire_output:
     # wildfire_output[[1]]: Wildfire emissions
