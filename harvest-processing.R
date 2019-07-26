@@ -37,10 +37,10 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold) {
   total.recovered.residue <- cbrec.dt[,sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)]
   
   # Initialize harvest processing emissions; this will regurgitate one row to add to year 1 emissions.
-  harvest.processing.emissions <- data.table(CO2_kg=0, CO_kg=0, CH4_kg=0, NOx_kg=0, PMUnder10um_kg=0, PMUnder2.5um_kg=0, SO2_kg=0, VOC_kg=0,char_kg=0)
+  harvest.processing.emissions <- data.table(CO2_kg=0, CO_kg=0, N2O_kg=0, CH4_kg=0, NOx_kg=0, PMUnder10um_kg=0, PMUnder2.5um_kg=0, SOx_kg=0, VOC_kg=0,char_kg=0)
 
   # Do the same for transportation emissions.
-  transportation.emissions <- data.table(CO2_kg=0, CO_kg=0, CH4_kg=0, NOx_kg=0, PMUnder10um_kg=0, PMUnder2.5um_kg=0, SO2_kg=0, VOC_kg=0,char_kg=0)
+  transportation.emissions <- data.table(CO2_kg=0, CO_kg=0, N2O_kg=0, CH4_kg=0, NOx_kg=0, PMUnder10um_kg=0, PMUnder2.5um_kg=0, SOx_kg=0, VOC_kg=0,char_kg=0)
   
   # Create a column for recovered residues that will make it to the power plant. Currently assuming that after comminution, size class is irrelevant.
   cbrec.dt[,mass_to_plant_tonnesAcre:=0]
@@ -321,6 +321,10 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold) {
             cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_10To35[,sum(CO_kg)] +
             cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_Over35[,sum(CO_kg)], 
           
+          N2O_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_LessThan10[,sum(N2O_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_10To35[,sum(N2O_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_Over35[,sum(N2O_kg)], 
+          
           CH4_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_LessThan10[,sum(CH4_kg)] +
             cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_10To35[,sum(CH4_kg)] +
             cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_Over35[,sum(CH4_kg)], 
@@ -337,9 +341,9 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold) {
             cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_10To35[,sum(PMUnder2.5um_kg)] +
             cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_Over35[,sum(PMUnder2.5um_kg)],
           
-          SO2_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_LessThan10[,sum(SO2_kg)] +
-            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_10To35[,sum(SO2_kg)] +
-            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_Over35[,sum(SO2_kg)], 
+          SOx_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_LessThan10[,sum(SOx_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_10To35[,sum(SOx_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_Over35[,sum(SOx_kg)], 
           
           VOC_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_LessThan10[,sum(VOC_kg)] +
             cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Chip_10To35[,sum(VOC_kg)] +
@@ -358,6 +362,10 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold) {
             cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(CO_kg)] +
             cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(CO_kg)],
           
+          N2O_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(N2O_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(N2O_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(N2O_kg)],
+          
           CH4_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(CH4_kg)] +
             cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(CH4_kg)] +
             cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(CH4_kg)],
@@ -374,9 +382,9 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold) {
             cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(PMUnder2.5um_kg)] +
             cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(PMUnder2.5um_kg)],
           
-          SO2_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(SO2_kg)] +
-            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(SO2_kg)] +
-            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(SO2_kg)],
+          SOx_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(SOx_kg)] +
+            cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(SOx_kg)] +
+            cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(SOx_kg)],
           
           VOC_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(VOC_kg)] +
             cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(VOC_kg)] +
@@ -394,6 +402,10 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold) {
         CO_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(CO_kg)] +
           cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(CO_kg)] +
           cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(CO_kg)],
+        
+        N2O_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(N2O_kg)] +
+          cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(N2O_kg)] +
+          cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(N2O_kg)],
 
         CH4_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(CH4_kg)] +
           cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(CH4_kg)] +
@@ -411,9 +423,9 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold) {
           cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(PMUnder2.5um_kg)] +
           cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(PMUnder2.5um_kg)],
 
-        SO2_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(SO2_kg)] +
-          cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(SO2_kg)] +
-          cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(SO2_kg)],
+        SOx_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(SOx_kg)] +
+          cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(SOx_kg)] +
+          cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(SOx_kg)],
 
         VOC_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(VOC_kg)] +
           cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(VOC_kg)] +
@@ -433,45 +445,45 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold) {
         Grind_10To35 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
         Grind_Over35 <- equipment_emissions[Equipment_code=='L.3' | Equipment_code=='L.1' | Equipment_code=='G.1',]
         # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
-        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
       }
       if(user_inputs[variable=='treatment_type',value]=='TFA20' | user_inputs[variable=='treatment_type',value]=='TFB20' | user_inputs[variable=='treatment_type',value]=='TP20') { # 20% thing
         Grind_LessThan10 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
         Grind_10To35 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
         Grind_Over35 <- equipment_emissions[Equipment_code=='L.3.20' | Equipment_code=='L.1' | Equipment_code=='G.1',]
         # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
-        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
       }
       if(user_inputs[variable=='treatment_type',value]=='TFA40' | user_inputs[variable=='treatment_type',value]=='TFB40' | user_inputs[variable=='treatment_type',value]=='TP40') { # 20% thing
         Grind_LessThan10 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
         Grind_10To35 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
         Grind_Over35 <- equipment_emissions[Equipment_code=='L.3.40' | Equipment_code=='L.1' | Equipment_code=='G.1',]
         # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
-        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
       }
       if(user_inputs[variable=='treatment_type',value]=='TFA60' | user_inputs[variable=='treatment_type',value]=='TFB60' | user_inputs[variable=='treatment_type',value]=='TP60') { # 20% thing
         Grind_LessThan10 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
         Grind_10To35 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
         Grind_Over35 <- equipment_emissions[Equipment_code=='L.3.60' | Equipment_code=='L.1' | Equipment_code=='G.1',]
         # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
-        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
       }
       if(user_inputs[variable=='treatment_type',value]=='TFA80' | user_inputs[variable=='treatment_type',value]=='TFB80' | user_inputs[variable=='treatment_type',value]=='TP80') { # 20% thing
         Grind_LessThan10 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
         Grind_10To35 <- equipment_emissions[Equipment_code=='L.1' | Equipment_code=='G.1',]
         Grind_Over35 <- equipment_emissions[Equipment_code=='L.3.80' | Equipment_code=='L.1' | Equipment_code=='G.1',]
         # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
-        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
       }
 
       Trans1_LessThan10 <- equipment_emissions[Equipment_code=='H.5',]
@@ -513,45 +525,45 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold) {
         Grind_10To35 <- equipment_emissions[Equipment_code=='SS.2.WT' | Equipment_code=='L.3' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
         Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1' | Equipment_code=='T.1' | Equipment_code=='L.3' | Equipment_code=='G.1' | Equipment_code=='CS.1' | Equipment_code=='L.1',]
         # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
-        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
       }
       if(user_inputs[variable=='treatment_type',value]=='TFA20' | user_inputs[variable=='treatment_type',value]=='TFB20' | user_inputs[variable=='treatment_type',value]=='TP20') { # 20% thing
         Grind_LessThan10 <- equipment_emissions[Equipment_code=='SS.2.WT.20' | Equipment_code=='L.3.20' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
         Grind_10To35 <- equipment_emissions[Equipment_code=='SS.2.WT.20' | Equipment_code=='L.3.20' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
         Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1.20' | Equipment_code=='T.1.20' | Equipment_code=='L.3.20' | Equipment_code=='G.1' | Equipment_code=='CS.1' | Equipment_code=='L.1',]
         # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
-        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
       }
       if(user_inputs[variable=='treatment_type',value]=='TFA40' | user_inputs[variable=='treatment_type',value]=='TFB40' | user_inputs[variable=='treatment_type',value]=='TP40') { # 20% thing
         Grind_LessThan10 <- equipment_emissions[Equipment_code=='SS.2.WT.40' | Equipment_code=='L.3.40' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
         Grind_10To35 <- equipment_emissions[Equipment_code=='SS.2.WT.40' | Equipment_code=='L.3.40' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
         Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1.40' | Equipment_code=='T.1.40' | Equipment_code=='L.3.40' | Equipment_code=='G.1' | Equipment_code=='CS.1' | Equipment_code=='L.1',]
         # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
-        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
       }
       if(user_inputs[variable=='treatment_type',value]=='TFA60' | user_inputs[variable=='treatment_type',value]=='TFB60' | user_inputs[variable=='treatment_type',value]=='TP60') { # 20% thing
         Grind_LessThan10 <- equipment_emissions[Equipment_code=='SS.2.WT.60' | Equipment_code=='L.3.60' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
         Grind_10To35 <- equipment_emissions[Equipment_code=='SS.2.WT.60' | Equipment_code=='L.3.60' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
         Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1.60' | Equipment_code=='T.1.60' | Equipment_code=='L.3.60' | Equipment_code=='G.1' | Equipment_code=='CS.1' | Equipment_code=='L.1',]
         # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
-        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
       }
       if(user_inputs[variable=='treatment_type',value]=='TFA80' | user_inputs[variable=='treatment_type',value]=='TFB80' | user_inputs[variable=='treatment_type',value]=='TP80') { # 20% thing
         Grind_LessThan10 <- equipment_emissions[Equipment_code=='SS.2.WT.80' | Equipment_code=='L.3.80' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
         Grind_10To35 <- equipment_emissions[Equipment_code=='SS.2.WT.80' | Equipment_code=='L.3.80' | Equipment_code=='L.1' | Equipment_code=='G.1' | Equipment_code=='CS.1',]
         Grind_Over35 <- equipment_emissions[Equipment_code=='CY.1.80' | Equipment_code=='T.1.80' | Equipment_code=='L.3.80' | Equipment_code=='G.1' | Equipment_code=='CS.1' | Equipment_code=='L.1',]
         # In this case, the loader (L.1) is used twice, incurring emissions each time. To get the same effect, we multiply the L.1 emissions by 2.
-        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
-        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SO2_kg = SO2_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_LessThan10[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_10To35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
+        Grind_Over35[Equipment_code=='L.1',':='(CO2_kg = CO2_kg * 2, CO_kg = CO_kg * 2, N2O_kg = N2O_kg * 2, CH4_kg = CH4_kg * 2, NOx_kg = NOx_kg * 2, PMUnder10um_kg = PMUnder10um_kg * 2, PMUnder2.5um_kg = PMUnder2.5um_kg * 2, SOx_kg = SOx_kg * 2, VOC_kg = VOC_kg * 2)]
       }
       Trans1_LessThan10 <- equipment_emissions[Equipment_code=='H.5',]
       Trans1_10To35 <- equipment_emissions[Equipment_code=='H.1',]
@@ -595,6 +607,10 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold) {
       CO_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(CO_kg)] +
         cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(CO_kg)] +
         cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(CO_kg)],
+      
+      N2O_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(N2O_kg)] +
+        cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(N2O_kg)] +
+        cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(N2O_kg)],
 
       CH4_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(CH4_kg)] +
         cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(CH4_kg)] +
@@ -612,9 +628,9 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold) {
         cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(PMUnder2.5um_kg)] +
         cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(PMUnder2.5um_kg)],
 
-      SO2_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(SO2_kg)] +
-        cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(SO2_kg)] +
-        cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(SO2_kg)],
+      SOx_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(SOx_kg)] +
+        cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(SOx_kg)] +
+        cbrec.dt[cell_slope>=35 & cell_slope<80, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_Over35[,sum(SOx_kg)],
 
       VOC_kg = cbrec.dt[cell_slope<10, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_LessThan10[,sum(VOC_kg)] +
         cbrec.dt[cell_slope>=10 & cell_slope<35, sum(Recovered_CWD_tonnesAcre, Recovered_FWD_tonnesAcre, Recovered_Foliage_tonnesAcre)] * cell_to_acres * Grind_10To35[,sum(VOC_kg)] +
@@ -661,6 +677,24 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold) {
       cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_LessThan10[,sum(CO_kg)])] +
       cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_10To35[,sum(CO_kg)])] +
       cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_Over35[,sum(CO_kg)])],
+    
+    N2O_kg = N2O_kg +
+      # Emissions from cells with less than 5 miles between road point to plant; this will only utilize Transportation 1, and the distance is the CelltoRoad and Road to Plant.
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_LessThan10[,sum(N2O_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_10To35[,sum(N2O_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_Over35[,sum(N2O_kg)])] +
+      # Emissions from cells with more than 5 miles between road and plant; this will utilize transportation 1 and 2. Transportation 1 will cover CelltoRoad and CellToRoadMod, Trans2 will cover RoadToPlant and RoadToPlantMod.
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_LessThan10[,sum(N2O_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_10To35[,sum(N2O_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_Over35[,sum(N2O_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_LessThan10[,sum(N2O_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_10To35[,sum(N2O_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_Over35[,sum(N2O_kg)])] +
+      
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_LessThan10[,sum(N2O_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_10To35[,sum(N2O_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_Over35[,sum(N2O_kg)])],
     
     CH4_kg = CH4_kg +
       # Emissions from cells with less than 5 miles between road point to plant; this will only utilize Transportation 1, and the distance is the CelltoRoad and Road to Plant.
@@ -734,23 +768,23 @@ harvest_processing_fun <- function(cbrec.dt,density.threshold) {
       cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_10To35[,sum(PMUnder2.5um_kg)])] +
       cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_Over35[,sum(PMUnder2.5um_kg)])],
 
-    SO2_kg = SO2_kg +
+    SOx_kg = SOx_kg +
       # Emissions from cells with less than 5 miles between road point to plant; this will only utilize Transportation 1, and the distance is the CelltoRoad and Road to Plant.
-      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_LessThan10[,sum(SO2_kg)])] +
-      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_10To35[,sum(SO2_kg)])] +
-      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_Over35[,sum(SO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_LessThan10[,sum(SOx_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_10To35[,sum(SOx_kg)])] +
+      cbrec.dt[RoadToPlant_miles <= 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + RoadToPlant_miles) * Trans1_Over35[,sum(SOx_kg)])] +
       # Emissions from cells with more than 5 miles between road and plant; this will utilize transportation 1 and 2. Transportation 1 will cover CelltoRoad and CellToRoadMod, Trans2 will cover RoadToPlant and RoadToPlantMod.
-      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_LessThan10[,sum(SO2_kg)])] +
-      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_10To35[,sum(SO2_kg)])] +
-      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_Over35[,sum(SO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_LessThan10[,sum(SOx_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_10To35[,sum(SOx_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (CellToRoadDist_miles + CellToRoadMod) * Trans1_Over35[,sum(SOx_kg)])] +
       
-      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_LessThan10[,sum(SO2_kg)])] +
-      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_10To35[,sum(SO2_kg)])] +
-      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_Over35[,sum(SO2_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_LessThan10[,sum(SOx_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_10To35[,sum(SOx_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * (RoadToPlant_miles + RoadToPlantMod) * Trans2_Over35[,sum(SOx_kg)])] +
       
-      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_LessThan10[,sum(SO2_kg)])] +
-      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_10To35[,sum(SO2_kg)])] +
-      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_Over35[,sum(SO2_kg)])],
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope<10,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_LessThan10[,sum(SOx_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=10 & cell_slope<35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_10To35[,sum(SOx_kg)])] +
+      cbrec.dt[RoadToPlant_miles > 5 & cell_slope>=35,sum((Recovered_CWD_tonnesAcre + Recovered_FWD_tonnesAcre + Recovered_Foliage_tonnesAcre) * cell_to_acres * TransLoad_Over35[,sum(SOx_kg)])],
 
     VOC_kg = VOC_kg +
       # Emissions from cells with less than 5 miles between road point to plant; this will only utilize Transportation 1, and the distance is the CelltoRoad and Road to Plant.

@@ -55,6 +55,10 @@ CH4_carbon_fraction <- 16.0426/12.011
 CO_carbon_fraction <- 28.010/12.011
 PM10_carbon_fraction <- 1/0.6
 PM2.5_carbon_fraction <- 1/0.6
+plant_SO2_SOx_fraction <- 0.97 # percent of SOx emitted as SO2, power plant
+equipment_SO2_SOx_fraction <- 0.97 # percent of SOx emitted as SO2, harvest/processing equipment
+fire_N2O_NOx_fraction <- 0.0568 # Percent of NOx emitted as N2O, prescribed burn and wildfire; based on average burn values from CARB
+
 # These are currently dummy values
 warning("VOC and char carbon fractions must be confirmed.")
 VOC_carbon_fraction <- 1/0.4
@@ -65,7 +69,7 @@ pile.burn.combustion.frac <- 0.9
 pile.burn.char.frac <- 0.01
 
 # Biomass plant type will have a set percentage of unburned fuel. Build a reference table for that here
-biomass_plant_unburnt_fuel <- data.table(plant.type=c("Biomass stoker","Fluidized bed combustor","Cyclone combustor","Gasifier"),unburned.fuel.frac=c(0.035,0.0025,0.03,0.0025))
+biomass_plant_unburnt_fuel <- data.table(plant.type=c("Biomass stoker","Fluidized bed combustor","Cyclone combustor","Gasifier"),unburned.fuel.frac=c(0.035,0.025,0.03,0.025))
 
 ###################################################################################################
 # My code refers to the silvicultural treatments by code; the wildfire file names use full names.

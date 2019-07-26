@@ -479,6 +479,10 @@ annual_fire_detail_fun <- function(cbrec.dt, year.i, wildfire.data, wildfire.dat
   wild.prob.raster <- raster(paste(wildfire.probability.directory,list.files(wildfire.probability.directory)[str_detect(list.files(wildfire.probability.directory),paste(year.i+2020,"tif",sep="."))],sep=""))
   
   # Reproject, resample, and crop using projectRaster. I think I can get away from masking by using data table merges.
+  # Note: When using "Run All" in RStudio, this line generates the following errors: 
+  # no non-missing arguments to min; returning Inf
+  # no non-missing arguments to max; returning -Inf
+  # This error does not occur when running the code from the terminal
   resampled.wp.raster <- projectRaster(wild.prob.raster,study.area.raster)
   
   # Convert to a data table
@@ -741,6 +745,7 @@ annual_fire_detail_fun <- function(cbrec.dt, year.i, wildfire.data, wildfire.dat
                         Duff_Scattered_SO2_EmFac = Duff_year100_Scattered_SO2_EmFac, Foliage_Scattered_SO2_EmFac = Foliage_year100_Scattered_SO2_EmFac, FWD_Scattered_SO2_EmFac = FWD_year100_Scattered_SO2_EmFac, CWD_Scattered_SO2_EmFac = CWD_year100_Scattered_SO2_EmFac, Piled_SO2_EmFac = Piled_year100_SO2_EmFac,
                         Duff_Scattered_VOC_EmFac = Duff_year100_Scattered_VOC_EmFac, Foliage_Scattered_VOC_EmFac = Foliage_year100_Scattered_VOC_EmFac, FWD_Scattered_VOC_EmFac = FWD_year100_Scattered_VOC_EmFac, CWD_Scattered_VOC_EmFac = CWD_year100_Scattered_VOC_EmFac, Piled_VOC_EmFac = Piled_year100_VOC_EmFac)]
   }
+
   # Trim just what we need from wildfire.data; we will merge this with cbrec.dt and export the updated cbrec.dt.
   merge.wildfire.data <- wildfire.data[,list(x, y, CWD_Scattered_CombustionFrac, FWD_Scattered_CombustionFrac, Foliage_Scattered_CombustionFrac, Duff_Scattered_CombustionFrac, CWD_Scattered_CharFrac, FWD_Scattered_CharFrac, Duff_Scattered_CH4_EmFac, Foliage_Scattered_CH4_EmFac, FWD_Scattered_CH4_EmFac, CWD_Scattered_CH4_EmFac, Piled_CH4_EmFac, Duff_Scattered_CO_EmFac, Foliage_Scattered_CO_EmFac, FWD_Scattered_CO_EmFac, CWD_Scattered_CO_EmFac, Piled_CO_EmFac, Duff_Scattered_NOx_EmFac, Foliage_Scattered_NOx_EmFac, FWD_Scattered_NOx_EmFac, CWD_Scattered_NOx_EmFac, Piled_NOx_EmFac, Duff_Scattered_PM10_EmFac, Foliage_Scattered_PM10_EmFac, FWD_Scattered_PM10_EmFac, CWD_Scattered_PM10_EmFac, Piled_PM10_EmFac, Duff_Scattered_PM2.5_EmFac, Foliage_Scattered_PM2.5_EmFac, FWD_Scattered_PM2.5_EmFac, CWD_Scattered_PM2.5_EmFac, Piled_PM2.5_EmFac, Duff_Scattered_SO2_EmFac, Foliage_Scattered_SO2_EmFac, FWD_Scattered_SO2_EmFac, CWD_Scattered_SO2_EmFac, Piled_SO2_EmFac, Duff_Scattered_VOC_EmFac, Foliage_Scattered_VOC_EmFac, FWD_Scattered_VOC_EmFac, CWD_Scattered_VOC_EmFac, Piled_VOC_EmFac)]
   setkey(cbrec.dt,x,y)
@@ -776,7 +781,7 @@ annual_fire_detail_fun <- function(cbrec.dt, year.i, wildfire.data, wildfire.dat
 
 annual_wildfire_fun <- function(cbrec.dt, residue.disposition, year.i) {
   
-  wildfire_emissions_profile <- data.table(CO2_tonnes=0, CO_tonnes=0, N2O_tonnes=0, CH4_tonnes=0, NOx_tonnes=0, PMUnder10um_tonnes=0, PMUnder2.5um_tonnes=0, SO2_tonnes=0, VOC_tonnes=0, char_tonnes=0)
+  wildfire_emissions_profile <- data.table(CO2_tonnes=0, CO_tonnes=0, CH4_tonnes=0, NOx_tonnes=0, PMUnder10um_tonnes=0, PMUnder2.5um_tonnes=0, SO2_tonnes=0, VOC_tonnes=0, char_tonnes=0)
   
   # Though wildfire will in reality strike one year and burn a large portion of residue, because wildfires are probabilistic, we model 
   # it as a series of annual, small wildfires, with the mass fraction of residues exposed to wildfire equal to the wildfire probability.
@@ -884,7 +889,7 @@ annual_wildfire_fun <- function(cbrec.dt, residue.disposition, year.i) {
 
 duff_annual_wildfire_fun <- function(cbrec.dt, year.i) {
   
-  wildfire_emissions_profile <- data.table(CO2_tonnes=0, CO_tonnes=0, N2O_tonnes=0, CH4_tonnes=0, NOx_tonnes=0, PMUnder10um_tonnes=0, PMUnder2.5um_tonnes=0, SO2_tonnes=0, VOC_tonnes=0, char_tonnes=0)
+  wildfire_emissions_profile <- data.table(CO2_tonnes=0, CO_tonnes=0, CH4_tonnes=0, NOx_tonnes=0, PMUnder10um_tonnes=0, PMUnder2.5um_tonnes=0, SO2_tonnes=0, VOC_tonnes=0, char_tonnes=0)
   
   # Duff will burn in the same manner as the other size classes, but we calculate it in a separate function so it does
   # not get triple-counted with the other residue segments, and I can keep the functions general.

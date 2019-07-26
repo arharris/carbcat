@@ -192,12 +192,18 @@ duff_decay_fun <- function(cbrec.dt,year.i) {
   # We should have accumulated duff from all residues prior to calling this function. Now we can decay duff, add the resulting emissions, and adjust duff mass totals
   decay_emissions_profile[,CH4_tonnes := CH4_tonnes + cbrec.dt[,sum(one_year_decay_fun(Duff_tonnesAcre,duff_k_val) * Carbon_frac)] * cell_to_acres * CH4_decay_emissions_fraction * CH4_carbon_fraction]
   decay_emissions_profile[,CO2_tonnes := CO2_tonnes + cbrec.dt[,sum(one_year_decay_fun(Duff_tonnesAcre,duff_k_val) * Carbon_frac)] * cell_to_acres * (1-CH4_decay_emissions_fraction) * CO2_carbon_fraction]
+  
+  # We need to output the decay mass lost
+  duff.decay.year.i <- cbrec.dt[,sum(one_year_decay_fun(Duff_tonnesAcre,duff_k_val))]
+  
+  # Now apply the mass loss
   cbrec.dt[,Duff_tonnesAcre := Duff_tonnesAcre - one_year_decay_fun(Duff_tonnesAcre,duff_k_val)]
   
   # Repeat for previously fired duff.
   decay_emissions_profile[,CH4_tonnes := CH4_tonnes + cbrec.dt[,sum(one_year_decay_fun(prev_fired_Duff_tonnesAcre,duff_k_val) * Carbon_frac)] * cell_to_acres * CH4_decay_emissions_fraction * CH4_carbon_fraction]
   decay_emissions_profile[,CO2_tonnes := CO2_tonnes + cbrec.dt[,sum(one_year_decay_fun(prev_fired_Duff_tonnesAcre,duff_k_val) * Carbon_frac)] * cell_to_acres * (1-CH4_decay_emissions_fraction) * CO2_carbon_fraction]
+  prev.fired.duff.decay.year.i <- cbrec.dt[,sum(one_year_decay_fun(prev_fired_Duff_tonnesAcre,duff_k_val))]
   cbrec.dt[,prev_fired_Duff_tonnesAcre := prev_fired_Duff_tonnesAcre - one_year_decay_fun(prev_fired_Duff_tonnesAcre,duff_k_val)]
   
-  return(list(decay_emissions_profile,cbrec.dt))
+  return(list(decay_emissions_profile,cbrec.dt,(duff.decay.year.i + prev.fired.duff.decay.year.i)))
 }
