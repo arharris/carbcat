@@ -31,13 +31,12 @@
 
 prescribed_burn_processing_fun <- function(cbrec.dt,wildfire.data.directory,scenario.ID, tile.list) {
   
-  burn.emissions.directory <- paste(wildfire.data.directory,"burn_emissions/",sep="")
-  
   prescribed.burn.data <- data.table()
   
   # Cycle through tile_list, load the .rds files, and combine into a single data table.
   # This is a prescribed burn, so we use the "first" file for year 0.
   for (tile in tile.list) {
+    burn.emissions.directory <- paste(wildfire.data.directory,"burn_emissions/",tile,"/",sep="")
     # We'll need to load up fire data and trim unneeded columns. 
     prescribed.burn.filename <- list.files(burn.emissions.directory)[str_detect(list.files(burn.emissions.directory),paste(scenario.ID,tile,"0.rds",sep="-"))]
     new.tile <- readRDS(paste(burn.emissions.directory,prescribed.burn.filename,sep=""))
@@ -155,7 +154,8 @@ prescribed_burn_processing_fun <- function(cbrec.dt,wildfire.data.directory,scen
 
 prescribed_burn_fun <- function(cbrec.dt, burn.type) {
   # Create an emissions output object
-  prescribed_burn_emissions <- data.table(CO2_tonnes=0, CO_tonnes=0, CH4_tonnes=0, NOx_tonnes=0, PMUnder10um_tonnes=0, PMUnder2.5um_tonnes=0, SO2_tonnes=0, VOC_tonnes=0, char_tonnes=0)
+  prescribed_burn_emissions <- data.table(CO2_tonnes=0, CO_tonnes=0, CH4_tonnes=0, NOx_tonnes=0, PMUnder10um_tonnes=0, PMUnder2.5um_tonnes=0, SO2_tonnes=0, VOC_tonnes=0)
+  prescribed_burn_mass <- data.table(combusted.residue_tonnes=0, char_tonnes=0)
   
   # The prescribed burn will affect different residue segments depending on the burn type.
   if(burn.type=="Pile") {
@@ -166,6 +166,7 @@ prescribed_burn_fun <- function(cbrec.dt, burn.type) {
 
     total.segment.carbon <- cbrec.dt[,sum(Carbon_frac * Piled_CWD_tonnesAcre, Carbon_frac * Piled_FWD_tonnesAcre, Carbon_frac * Piled_Foliage_tonnesAcre)] * cell_to_acres
     total.unburned.carbon <- total.segment.carbon * (1 - pile.burn.combustion.frac - pile.burn.char.frac)
+    total.combusted.mass <- cbrec.dt[,sum(Piled_CWD_tonnesAcre, Piled_FWD_tonnesAcre, Piled_Foliage_tonnesAcre)] * pile.burn.combustion.frac * cell_to_acres
     
     # Calculate some year.i emissions; we'll use this several times
     CO.emissions.year.i <- cbrec.dt[,sum((Piled_CWD_tonnesAcre + Piled_FWD_tonnesAcre + Piled_Foliage_tonnesAcre) * Piled_CO_EmFac)] * cell_to_acres
@@ -186,8 +187,10 @@ prescribed_burn_fun <- function(cbrec.dt, burn.type) {
                                     PMUnder10um_tonnes = PMUnder10um_tonnes + PM10.emissions.year.i,
                                     PMUnder2.5um_tonnes = PMUnder2.5um_tonnes + PM2.5.emissions.year.i,
                                     SO2_tonnes = SO2_tonnes + SO2.emissions.year.i,
-                                    VOC_tonnes = VOC_tonnes + VOC.emissions.year.i,
-                                    char_tonnes = char_tonnes + char.year.i)]
+                                    VOC_tonnes = VOC_tonnes + VOC.emissions.year.i)]
+    
+    prescribed_burn_mass[,':='(combusted.residue_tonnes = total.combusted.mass,
+                               char_tonnes = char.year.i)]
     
     # Any carbon not emitted as CH4, CO, PM10 (which is inclusive of PM2.5), or VOC is emitted as CO2. So we need to determine how much carbon was emitted (the total carbon absent the
     # carbon present in unburnt fuel or char), determine how much the of the emitted carbon was in non-CO2 constituents, then assume the remainder was emitted as CO2 and convert to mass
@@ -226,7 +229,9 @@ prescribed_burn_fun <- function(cbrec.dt, burn.type) {
                                            Scattered_FWD_tonnesAcre * Carbon_frac * (1 - FWD_Scattered_CombustionFrac - FWD_Scattered_CharFrac),
                                            Scattered_Foliage_tonnesAcre * Carbon_frac * (1 - Foliage_Scattered_CombustionFrac))] * cell_to_acres
     
-
+    total.combusted.mass <- cbrec.dt[,sum(Scattered_CWD_tonnesAcre * CWD_Scattered_CombustionFrac,
+                                          Scattered_FWD_tonnesAcre * FWD_Scattered_CombustionFrac,
+                                          Scattered_Foliage_tonnesAcre * Foliage_Scattered_CombustionFrac)] * cell_to_acres
     
     # Any residue left unburnt can still be exposed to wildfire, so we can leave it in the original columns. Add combustion emissions to the emissions 
     # columns, and then adjust the dynamic mass column. Repeat for char. DUFF WILL NOT BE GENERATED YET, SO WE DON'T NEED TO WORRY ABOUT IT.
@@ -246,8 +251,10 @@ prescribed_burn_fun <- function(cbrec.dt, burn.type) {
                                     PMUnder10um_tonnes = PMUnder10um_tonnes + PM10.emissions.year.i,
                                     PMUnder2.5um_tonnes = PMUnder2.5um_tonnes + PM2.5.emissions.year.i,
                                     SO2_tonnes = SO2_tonnes + SO2.emissions.year.i,
-                                    VOC_tonnes = VOC_tonnes + VOC.emissions.year.i,
-                                    char_tonnes = char_tonnes + char.year.i)]
+                                    VOC_tonnes = VOC_tonnes + VOC.emissions.year.i)]
+    
+    prescribed_burn_mass[,':='(combusted.residue_tonnes = total.combusted.mass,
+                               char_tonnes = char.year.i)]
     
     # Any carbon not emitted as CH4, CO, PM10 (which is inclusive of PM2.5), or VOC is emitted as CO2. So we need to determine how much carbon was emitted (the total carbon absent the
     # carbon present in unburnt fuel or char), determine how much the of the emitted carbon was in non-CO2 constituents, then assume the remainder was emitted as CO2 and convert to mass
@@ -268,5 +275,5 @@ prescribed_burn_fun <- function(cbrec.dt, burn.type) {
               )]
   }
   
-  return(list(prescribed_burn_emissions,cbrec.dt))
+  return(list(prescribed_burn_emissions,prescribed_burn_mass,cbrec.dt))
 }

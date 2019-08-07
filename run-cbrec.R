@@ -70,7 +70,6 @@ initial_user_inputs <- copy(user_inputs)
 # Load up emissions factor/rate data from csv files.
 #####################################################
 equipment_emissions <- data.table(read.csv(user_inputs[variable=='equipment_emissions_filepath',value]))
-warning("CS.1 emissions are PER HOUR, not per BDT. This must be updated!")
 warning("CO emissions factors for all plants taken from 'PowerPlantEmissionSummary.xlsx' for Current Gen Combustion Plant.")
 
 #############################################################################################################################################
@@ -240,7 +239,7 @@ if(user_inputs[variable == "fraction_piled_residues",value]=="All") {
 }
 
 if(user_inputs[variable == "burn_type",value]=="All") {
-  burn.type.list <- c("No", "Pile", "Broadcast", "Pile and Broadcast")
+  burn.type.list <- c("None", "Pile", "Broadcast", "Pile and Broadcast")
 } else {
   burn.type.list <- user_inputs[variable == "burn_type",value]
 }
@@ -257,13 +256,23 @@ if(user_inputs[variable == "has_pulp_market",value]=="All") {
   pulp.market.list <- user_inputs[variable == "has_pulp_market",value]
 }
 
-user_input_iterations <- data.table(expand.grid(treatment.list, fraction.piled.list, burn.type.list, biomass.collection.list, pulp.market.list))
-setnames(user_input_iterations, c("Var1", "Var2", "Var3", "Var4", "Var5"), c("treatment", "frac.piled", "prescribed.burn.type", "biomass.collection","pulp.market"))
+user_input_combinations <- data.table(expand.grid(treatment.list, fraction.piled.list, burn.type.list, biomass.collection.list, pulp.market.list))
+setnames(user_input_combinations, c("Var1", "Var2", "Var3", "Var4", "Var5"), c("treatment", "frac.piled", "prescribed.burn.type", "biomass.collection","pulp.market"))
 # add scattered fractions
-user_input_iterations[,frac.scattered := "100%"]
-user_input_iterations[frac.piled == "30%",frac.scattered := "70%"]
-user_input_iterations[frac.piled == "50%",frac.scattered := "50%"]
-user_input_iterations[frac.piled == "70%",frac.scattered := "30%"]
+user_input_combinations[,frac.scattered := "100%"]
+user_input_combinations[frac.piled == "30%",frac.scattered := "70%"]
+user_input_combinations[frac.piled == "50%",frac.scattered := "50%"]
+user_input_combinations[frac.piled == "70%",frac.scattered := "30%"]
+
+# Many of the possibilities in user_input_combinations are not in complete_scenario_matrix (for example, collect piles with 0% piled).
+# Eliminate impossible rows before we cycle through them.
+complete_scenario_matrix <- data.table(read.csv(user_inputs[variable=='scenario_matrix_file',value]))
+
+setkey(user_input_combinations, treatment, frac.piled, frac.scattered, prescribed.burn.type, biomass.collection, pulp.market)
+setkey(complete_scenario_matrix, Silvicultural.Treatment, Fraction_Piled_Residues, Fraction_Scattered_Residues, Burn.Type, Biomass.Collection, Pulp.Market)
+
+user_input_iterations <- unique(complete_scenario_matrix[user_input_combinations][!is.na(ID),list(Silvicultural.Treatment, Fraction_Piled_Residues, Fraction_Scattered_Residues, Burn.Type, Biomass.Collection, Pulp.Market)])
+setnames(user_input_iterations,c("Silvicultural.Treatment", "Fraction_Piled_Residues", "Fraction_Scattered_Residues", "Burn.Type", "Biomass.Collection", "Pulp.Market"), c("treatment", "frac.piled", "frac.scattered", "prescribed.burn.type", "biomass.collection", "pulp.market"))
 
 for(user.input.row.i in 1:nrow(user_input_iterations)) {
   # Copy the original study_area_FCID data into a data structure that will dynamically change.
@@ -282,18 +291,11 @@ for(user.input.row.i in 1:nrow(user_input_iterations)) {
   # the entire study area. Due to harvest restrictions baked into the residue percentages, residue quantites will be affected by slope, which
   # varies from cell to cell. Rather than create an ID for case.data and merging with the complete scenario martix, create a smaller 
   # scenario matrix filtered through the user inputs, and merge with case.data
-  complete_scenario_matrix <- data.table(read.csv(user_inputs[variable=='scenario_matrix_file',value]))
-  
-  # Trim to the treatment, burn type, biomass collection, and pulp market
   scenario_matrix <- copy(complete_scenario_matrix[Fraction_Piled_Residues==user_inputs[variable=='fraction_piled_residues',value] &
                                                      Silvicultural.Treatment==user_inputs[variable=='treatment_type',value] & 
                                                      Burn.Type==user_inputs[variable=='burn_type',value] & 
                                                      Biomass.Collection==user_inputs[variable=='biomass_collection',value] & 
                                                      Pulp.Market==user_inputs[variable=='has_pulp_market',value],])
-  
-  # Not all combinations of user inputs are valid in the scenario matrix; if there are 0% piled residues, you cannot collect or burn piles.
-  # If scenario_matrix is empty, skip to the next iteration.
-  if(nrow(scenario_matrix)<1) {next}
   
   #########################################################################################################################################
   # The wildfire data will be selected based on some scenario matrix identifiers.
@@ -474,8 +476,10 @@ for(user.input.row.i in 1:nrow(user_input_iterations)) {
   year_0_mass_tracking <- data.table(
     field.residue.removed_tonnes = 0,
     power.plant.waste_tonnes = 0,
-    broadcast.burned.residue_tonnes = 0,
-    pile.burned.residue_tonnes = 0,
+    broadcast.burn.combusted.residue_tonnes = 0,
+    broadcast.burn.charred.residue_tonnes = 0,
+    pile.burn.combusted.residue_tonnes = 0,
+    pile.burn.charred.residue_tonnes = 0,
     residue.burned.to.electricity_tonnes = 0,
     residue.burned.to.heat_tonnes = 0,
     total.biomass.mobilized_tonnesAcre = 0
@@ -667,7 +671,7 @@ for(user.input.row.i in 1:nrow(user_input_iterations)) {
     
     # power_plant_output has 2 items: (will probably add a third for heat production)
     # power_plant_output[[1]]: power plant emissions
-    # power_plant_output[[2]]: power plant enery production
+    # power_plant_output[[2]]: power plant energy production
     
     year_0_mass_tracking[,':='(
       power.plant.waste_tonnes = power_plant_output[[1]]$char_kg/1000, # Include ash?
@@ -721,12 +725,10 @@ for(user.input.row.i in 1:nrow(user_input_iterations)) {
       if(user_inputs[variable=='burn_type',value] == "Broadcast") {
         prescribed_burn_output <- prescribed_burn_fun(case.data, user_inputs[variable=='burn_type',value])
         
-        # 2 items from prescribed_burn_output:
+        # 3 items from prescribed_burn_output:
         # prescribed_burn_output[[1]]: Prescribed burn emissions
-        # prescribed_burn_output[[2]]: Updated case.data
-        
-        # Update the case data with prescribed_burn_output[[2]]
-        case.data <- prescribed_burn_output[[2]]
+        # prescribed_burn_output[[2]]: Prescribed burn mass
+        case.data <- prescribed_burn_output[[3]]
         
         # Update the emissions data with prescribed_burn_output[[1]]
         year_0_emissions_tracking[year.i,':='(
@@ -741,19 +743,20 @@ for(user.input.row.i in 1:nrow(user_input_iterations)) {
           broadcast.burn.VOC_tonnes = prescribed_burn_output[[1]]$VOC_tonnes
         )]
         
-        # Add char production from this year to the next year's start-of-year char mass
-        mass_tracking[year.i+1, In.field.char.scattered_tonnes := In.field.char.scattered_tonnes + prescribed_burn_output[[1]]$char_tonnes]
+        
+        # Update the mass tracking data with prescribed_burn_output[[1]]. Also be sure to add char production from this year to the next year's start-of-year char mass
+        year_0_mass_tracking[,':='(broadcast.burn.combusted.residue_tonnes = prescribed_burn_output[[2]]$combusted.residue_tonnes,
+                                   broadcast.burn.charred.residue_tonnes = prescribed_burn_output[[2]]$char_tonnes)]
+        mass_tracking[(year.i+1):100, In.field.char.scattered_tonnes := In.field.char.scattered_tonnes + prescribed_burn_output[[2]]$char_tonnes]
       }
       if(user_inputs[variable=='burn_type',value] == "Pile") {
         warning("Residues remaining after pile burning are added to COARSE scattered debris - a fire model inconsistency we should fix in version 1.2")
         prescribed_burn_output <- prescribed_burn_fun(case.data, user_inputs[variable=='burn_type',value])
         
-        # 2 items from prescribed_burn_output:
+        # 3 items from prescribed_burn_output:
         # prescribed_burn_output[[1]]: Prescribed burn emissions
-        # prescribed_burn_output[[2]]: Updated case.data
-        
-        # Update the case data with prescribed_burn_output[[2]]
-        case.data <- prescribed_burn_output[[2]]
+        # prescribed_burn_output[[2]]: Prescribed burn mass
+        case.data <- prescribed_burn_output[[3]]
         
         # Update the emissions data with prescribed_burn_output[[1]]
         year_0_emissions_tracking[year.i,':='( 
@@ -768,18 +771,18 @@ for(user.input.row.i in 1:nrow(user_input_iterations)) {
           pile.burn.VOC_tonnes = prescribed_burn_output[[1]]$VOC_tonnes
         )]
         
-        # Add char production from this year to the next year's start-of-year char mass
-        mass_tracking[year.i+1, In.field.char.scattered_tonnes := In.field.char.scattered_tonnes + prescribed_burn_output[[1]]$char_tonnes]
+        # Update the mass tracking data with prescribed_burn_output[[1]]. Also be sure to add char production from this year to the next year's start-of-year char mass
+        year_0_mass_tracking[,':='(pile.burn.combusted.residue_tonnes = prescribed_burn_output[[2]]$combusted.residue_tonnes,
+                                   pile.burn.charred.residue_tonnes = prescribed_burn_output[[2]]$char_tonnes)]
+        mass_tracking[(year.i+1):100, In.field.char.scattered_tonnes := In.field.char.scattered_tonnes + prescribed_burn_output[[2]]$char_tonnes]
       }
       if(user_inputs[variable=='burn_type',value] == "Pile and Broadcast") {
         prescribed_burn_output <- prescribed_burn_fun(case.data, "Broadcast")
         
-        # 2 items from prescribed_burn_output:
+        # 3 items from prescribed_burn_output:
         # prescribed_burn_output[[1]]: Prescribed burn emissions
-        # prescribed_burn_output[[2]]: Updated case.data
-        
-        # Update the case data with prescribed_burn_output[[2]]
-        case.data <- prescribed_burn_output[[2]]
+        # prescribed_burn_output[[2]]: Prescribed burn mass
+        case.data <- prescribed_burn_output[[3]]
         
         # Update the emissions data with prescribed_burn_output[[1]]
         year_0_emissions_tracking[year.i,':='(
@@ -794,19 +797,19 @@ for(user.input.row.i in 1:nrow(user_input_iterations)) {
           broadcast.burn.VOC_tonnes = prescribed_burn_output[[1]]$VOC_tonnes
         )]
         
-        # Add char production from this year to the next year's start-of-year char mass
-        mass_tracking[year.i+1, In.field.char.scattered_tonnes := In.field.char.scattered_tonnes + prescribed_burn_output[[1]]$char_tonnes]
+        # Update the mass tracking data with prescribed_burn_output[[1]]. Also be sure to add char production from this year to the next year's start-of-year char mass
+        year_0_mass_tracking[,':='(broadcast.burn.combusted.residue_tonnes = prescribed_burn_output[[2]]$combusted.residue_tonnes,
+                                   broadcast.burn.charred.residue_tonnes = prescribed_burn_output[[2]]$char_tonnes)]
+        mass_tracking[(year.i+1):100, In.field.char.scattered_tonnes := In.field.char.scattered_tonnes + prescribed_burn_output[[2]]$char_tonnes]
         
         warning("Residues remaining after pile burning are added to COARSE scattered debris - a fire model inconsistency we should fix in version 1.2")
         # Because of this transmutation, pile burning has to happen after scattered debris, else it will be burned twice.
         prescribed_burn_output <- prescribed_burn_fun(case.data, "Pile")
         
-        # 2 items from prescribed_burn_output:
+        # 3 items from prescribed_burn_output:
         # prescribed_burn_output[[1]]: Prescribed burn emissions
-        # prescribed_burn_output[[2]]: Updated case.data
-        
-        # Update the case data with prescribed_burn_output[[2]]
-        case.data <- prescribed_burn_output[[2]]
+        # prescribed_burn_output[[2]]: Prescribed burn mass
+        case.data <- prescribed_burn_output[[3]]
         
         # Update the emissions data with prescribed_burn_output[[1]]
         year_0_emissions_tracking[year.i,':='( 
@@ -821,8 +824,10 @@ for(user.input.row.i in 1:nrow(user_input_iterations)) {
           pile.burn.VOC_tonnes = prescribed_burn_output[[1]]$VOC_tonnes
         )]
         
-        # Add char production from this year to the next year's start-of-year char mass
-        mass_tracking[year.i+1, In.field.char.scattered_tonnes := In.field.char.scattered_tonnes + prescribed_burn_output[[1]]$char_tonnes]
+        # Update the mass tracking data with prescribed_burn_output[[1]]. Also be sure to add char production from this year to the next year's start-of-year char mass
+        year_0_mass_tracking[,':='(pile.burn.combusted.residue_tonnes = prescribed_burn_output[[2]]$combusted.residue_tonnes,
+                                   pile.burn.charred.residue_tonnes = prescribed_burn_output[[2]]$char_tonnes)]
+        mass_tracking[(year.i+1):100, In.field.char.scattered_tonnes := In.field.char.scattered_tonnes + prescribed_burn_output[[2]]$char_tonnes]
       }
       
       # Clear out the combustion/char fractions and emissions factors; they will be re-added with wildfire data.
@@ -897,7 +902,7 @@ for(user.input.row.i in 1:nrow(user_input_iterations)) {
     
     # Add char produced this year to the starting char for the next year. Skip for year 100.
     if(year.i < 100) {
-      mass_tracking[year.i+1, In.field.char.scattered_tonnes := In.field.char.scattered_tonnes + wildfire_output[[1]]$char_tonnes]
+      mass_tracking[(year.i+1):100, In.field.char.scattered_tonnes := In.field.char.scattered_tonnes + wildfire_output[[1]]$char_tonnes]
     }
     
     emissions_tracking[year.i,':='(
@@ -924,7 +929,7 @@ for(user.input.row.i in 1:nrow(user_input_iterations)) {
     
     # Add char produced this year to the starting char for the next year. Skip for year 100.
     if(year.i < 100) {
-      mass_tracking[year.i+1, In.field.char.piled_tonnes := In.field.char.piled_tonnes + wildfire_output[[1]]$char_tonnes]
+      mass_tracking[(year.i+1):100, In.field.char.piled_tonnes := In.field.char.piled_tonnes + wildfire_output[[1]]$char_tonnes]
     }
     
     emissions_tracking[year.i,':='(

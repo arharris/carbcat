@@ -30,8 +30,6 @@
 # =================================================================================================
 
 wildfire_processing_fun <- function(wildfire.data.directory,scenario.ID, prescribed.burn, tile.list) {
-  
-  burn.emissions.directory <- paste(wildfire.data.directory,"burn_emissions/",sep="")
 
   wildfire_data_year0 <- data.table()
   wildfire_data_year25 <- data.table()
@@ -50,6 +48,7 @@ wildfire_processing_fun <- function(wildfire.data.directory,scenario.ID, prescri
   # If there was a prescribed burn, then we will use the "second" file for year 0 emissions. Otherwise, there will only be a "first" file for year 0.
   if(prescribed.burn=='None') {
     for (tile in tile.list) {
+      burn.emissions.directory <- paste(wildfire.data.directory,"burn_emissions/",tile,"/",sep="")
       # For each year (0, 25, 50, 75, or 100), we'll need to load up wildfire data, trim unneeded columns and rename the non-ID columns to include the year. 
       wildfire_filename_year0 <- list.files(burn.emissions.directory)[str_detect(list.files(burn.emissions.directory),paste(scenario.ID,tile,"0.rds",sep="-"))]
       new_tile_year0 <- readRDS(paste(burn.emissions.directory,wildfire_filename_year0,sep=""))
@@ -84,6 +83,7 @@ wildfire_processing_fun <- function(wildfire.data.directory,scenario.ID, prescri
     }
   } else { # A prescribed burn took place
     for (tile in tile.list) {
+      burn.emissions.directory <- paste(wildfire.data.directory,"burn_emissions/",tile,"/",sep="")
       # For each year (0, 25, 50, 75, or 100), we'll need to load up wildfire data, trim unneeded columns and rename the non-ID columns to include the year. 
       # There were prescribed burns, so for year 0 we use the "second" burn files.
       wildfire_filename_year0 <- list.files(burn.emissions.directory)[str_detect(list.files(burn.emissions.directory),paste(str_replace(scenario.ID,"first","second"),tile,"0.rds",sep="-"))]
@@ -118,8 +118,25 @@ wildfire_processing_fun <- function(wildfire.data.directory,scenario.ID, prescri
       new_tile_year100 <- NULL
     }
   }
-   
   
+  ######################################
+  # IMPLEMENT THIS ABOVE!
+  ######################################
+  list.way <- function(tile.list) {
+    burn.emissions.directory <- paste(wildfire.data.directory,"burn_emissions/",sep="")
+    year.0.filepaths <- sprintf(paste(burn.emissions.directory,"%d/",str_replace(scenario.ID,"first","second"),"-%d-0.rds",sep=""),tile.list,tile.list)
+    year.25.filepaths <- sprintf(paste(burn.emissions.directory,"%d/",scenario.ID,"-%d-25.rds",sep=""),tile.list,tile.list)
+    year.50.filepaths <- sprintf(paste(burn.emissions.directory,"%d/",scenario.ID,"-%d-50.rds",sep=""),tile.list,tile.list)
+    year.75.filepaths <- sprintf(paste(burn.emissions.directory,"%d/",scenario.ID,"-%d-75.rds",sep=""),tile.list,tile.list)
+    year.100.filepaths <- sprintf(paste(burn.emissions.directory,"%d/",scenario.ID,"-%d-100.rds",sep=""),tile.list,tile.list)
+    
+    wildfire_data_year0 <- rbindlist(lapply(year.0.filepaths, readRDS))
+    wildfire_data_year25 <- rbindlist(lapply(year.25.filepaths, readRDS))
+    wildfire_data_year50 <- rbindlist(lapply(year.50.filepaths, readRDS))
+    wildfire_data_year75 <- rbindlist(lapply(year.75.filepaths, readRDS))
+    wildfire_data_year100 <- rbindlist(lapply(year.100.filepaths, readRDS))
+    return(list(wildfire_data_year0,wildfire_data_year25,wildfire_data_year50,wildfire_data_year75,wildfire_data_year100))
+  }
   # From the wildfire data, we need to calculate: emissions factors, combustion fractions, char fractions, and unburned fractions. Because we have wildfire data for only
   # 5 years (0, 25, 50, 75, 100), these values will be interpolated between years, and will change from year to year, but some of the equation terms can be calculated in advance.
   # All of these values will have the residue_exposed as the denominator, so we need to be sure that we don't have a div/0 situation. So, when the value of a residue_exposed
